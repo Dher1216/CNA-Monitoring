@@ -326,3 +326,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
 @media print { .block h2 + .muted, .block h2 + .notice { break-after: avoid; } }
 .who .who-link { color: #fff; border: 1px solid rgba(255,255,255,.35); padding: 5px 10px; border-radius: 3px; text-decoration: none; }
 .who .who-link:hover { background: rgba(255,255,255,.12); }
+
+/* install prompt on phones */
+.install-banner { position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 50; display: flex; align-items: center; gap: 12px; background: var(--v900); color: #fff; border: 1px solid var(--gold); border-radius: 6px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(42, 22, 88, .35); }
+.install-banner img { border-radius: 8px; flex: none; }
+.install-banner .ib-text { flex: 1; min-width: 0; font-size: .88rem; line-height: 1.3; }
+.install-banner .ib-text strong { display: block; }
+.install-banner .ib-text span { color: var(--v200); }
+.install-banner .ib-x { background: none; border: 0; color: var(--v200); font: inherit; font-size: .85rem; cursor: pointer; padding: 8px 4px; text-decoration: underline; }
+@media print { .install-banner { display: none !important; } }

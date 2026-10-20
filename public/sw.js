@@ -1,6 +1,6 @@
 // Keeps the app screens (never the figures) on the phone so the app opens fast, even while the
 // server is waking up. Report data is never stored here: it always comes from the server.
-var CACHE = 'cna-shell-v1';
+var CACHE = 'cna-shell-v2';
 var SHELL = ['/', '/app.css', '/app.js', '/report.js', '/pwa.js', '/seal.png', '/favicon.png', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/manifest.webmanifest', '/fonts/ibm-plex-sans-latin-400-normal.woff2', '/fonts/ibm-plex-sans-latin-500-normal.woff2', '/fonts/ibm-plex-sans-latin-600-normal.woff2', '/fonts/spectral-latin-500-normal.woff2', '/fonts/spectral-latin-600-normal.woff2'];
 
 self.addEventListener('install', function (e) {
