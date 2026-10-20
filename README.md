@@ -82,6 +82,14 @@ The same app can run online. The code lives on GitHub, **Render** runs it, and *
 **4. Keep it awake (optional)**
 On the free plan Render puts the app to sleep after 15 minutes without visits, and the next visit takes about a minute. To avoid this, add a free monitor at https://uptimerobot.com: create an **HTTP(s)** monitor for `https://your-address.onrender.com/healthz` with a 5-minute interval. Render's free plan includes enough hours for one service to stay awake all month, but it may change the rules, and it can still restart the app at any time (no data is lost).
 
+**Moving your existing data from the office computer to the online version**
+
+1. On the office computer, replace the app files with this version (unzip over the folder, keep the `data` folder), then double-click **export-backup.bat** (or run `node export-backup.js`). It writes `CNA_backup_<date>.json` with your history, uploaded reports, voided fund sources and accounts. The app does not need to be running.
+2. Sign in to the online app, open **Upload and figures**, choose that file under **Restore from a backup file** and click **Restore**.
+3. Sign in again with the account and password you used on the office computer.
+
+Keep that file private: it contains the sign-in accounts.
+
 **5. Backups**
 The database keeps only a few hours of its own history, so use **Upload and figures > Download backup** after each change that matters and keep the file somewhere private (it contains the sign-in accounts). **Restore** puts a backup back. **Saved copy** in the top bar downloads a page that opens without the server.
 

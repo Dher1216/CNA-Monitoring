@@ -217,7 +217,7 @@
           : '<div class="pane"><h2>Saved copy and backups</h2><p class="muted">Each time something changes, the app saves the latest report as a web page and an Excel file that open without the server. Daily backups of all data are kept as well.</p>' +
             '<ul class="summary-list"><li>Saved copy folder: <code>' + esc(b.snapshot ? b.snapshot.dir : '(created after the first upload)') + '</code></li>' +
             '<li>Backup folder: <code>' + esc(b.dir) + '</code> (' + b.backups.length + ' backup' + (b.backups.length === 1 ? '' : 's') + (b.backups[0] ? ', latest ' + esc(b.backups[0]) : '') + ')</li></ul>' +
-            '<button class="btn alt" type="button" id="bk">Back up now</button></div>');
+            '<button class="btn alt" type="button" id="bk">Back up now</button> <a class="btn alt" href="/api/backup.json" download>Download backup file</a></div>');
       function tot() { var t = Math.round((Number($('#fe').value) || 0) * Math.round((Number($('#fa').value) || 0) * 100)) / 100; $('#ftot').textContent = peso(t); }
       $('#fe').oninput = tot; $('#fa').oninput = tot; tot();
       $('#ff').onsubmit = function (e) {
