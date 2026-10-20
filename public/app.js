@@ -78,7 +78,7 @@
       '<nav class="nav" aria-label="Main">' + links.map(function (l) { return '<a href="#/' + l[0] + '"' + (l[0] === active ? ' aria-current="page"' : '') + '>' + l[1] + '</a>'; }).join('') + '</nav>' +
       '<div class="who"><span>' + esc(me.name) + (me.role === 'admin' ? '' : ' (view only)') + '</span><a class="who-link" href="/api/offline.html" download title="A copy of the latest report that opens without the server">Saved copy</a><button type="button" id="pw">Change password</button><button type="button" id="out">Sign out</button></div>' +
       '</div></header><main class="main" id="main">' + inner + '</main>';
-    $('#out').onclick = function () { api('/api/logout', { method: 'POST' }).then(function () { me = null; showLogin(); }); };
+    $('#out').onclick = function () { api('/api/logout', { method: 'POST' }).then(function () { me = null; try { localStorage.removeItem(CACHE_KEY); } catch (e) { /* none */ } showLogin(); }); };
     $('#pw').onclick = function () { location.hash = '#/password'; };
   }
 
@@ -345,7 +345,9 @@
     return viewReport(name === 'reports' ? 'reports' : 'dashboard', hashQuery());
   }
   window.addEventListener('hashchange', route);
-  api('/api/me').then(function (d) { me = d.user; route(); }).catch(function () {
+  var waking = setTimeout(function () { if (!me) app.innerHTML = '<main class="main"><div class="pane empty"><h2>Opening the report</h2><p>The server is waking up. This can take up to a minute the first time. Please wait.</p></div></main>'; }, 4000);
+  api('/api/me').then(function (d) { clearTimeout(waking); me = d.user; route(); }).catch(function () {
+    clearTimeout(waking);
     // Server unreachable: show the last report this browser received, if any.
     var cached = null; try { cached = JSON.parse(localStorage.getItem(CACHE_KEY)); } catch (e) { /* none */ }
     if (cached && cached.model) {

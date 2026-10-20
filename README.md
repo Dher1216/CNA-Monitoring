@@ -41,6 +41,14 @@ Keep the window open while people use the report. On Mac or Linux, run `./start.
 - A UPS is worth having.
 - To start the app automatically when the computer turns on, put a shortcut to `start.bat` in the Windows Startup folder (`Win + R`, type `shell:startup`).
 
+## Install it on a phone's home screen
+
+Open the app's address in the phone's browser and sign in once.
+- **iPhone (Safari):** tap the Share button, then **Add to Home Screen**, then **Add**.
+- **Android (Chrome):** tap the menu (three dots), then **Install app** or **Add to Home screen**.
+
+It then opens full screen from an icon with the provincial seal. The app screens are kept on the phone so it opens quickly. If the server is off or asleep, the phone shows the last report it received, marked as a saved copy with its "as of" date. Signing out removes that saved report from the phone. Figures always come from the server; this is not a separate app store app.
+
 ## Open it from outside the office (Tailscale, free)
 
 Tailscale makes a private network between the server computer and the phones of the people you approve. Nobody else can reach the app.
