@@ -20,10 +20,10 @@ In detail:
 - **Print** and **Download Excel** (the workbook uses formulas, so every total can be checked).
 - **History** of every upload and every change; any version can be opened.
 
-## Two kinds of accounts
+## Kinds of accounts
 
 - **Administrator**: uploads the Excel file, sets the year, number of employees and amount per employee, voids fund sources, manages accounts.
-- **Head of Office**: view, print and download only.
+- **Head of Office** and **Staff**: view, print and download only.
 
 ## Start it (Windows)
 

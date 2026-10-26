@@ -298,15 +298,15 @@
 
   // ---------- admin: people
   function viewUsers() {
-    shell('users', '<h1 class="page-title">People</h1><p class="page-lead">The Administrator uploads data and changes figures. Head of Office accounts can only view, print and download the report.</p><div id="us"><p class="muted">Loading</p></div>');
+    shell('users', '<h1 class="page-title">People</h1><p class="page-lead">The Administrator uploads data and changes figures. Head of Office and Staff accounts can only view, print and download the report.</p><div id="us"><p class="muted">Loading</p></div>');
     api('/api/users').then(function (d) {
       $('#us').innerHTML = '<div class="pane"><h2>Accounts</h2><div class="tbl-scroll"><table class="tbl"><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>' +
         d.users.map(function (u) {
-          return '<tr><td>' + esc(u.name) + '</td><td>' + esc(u.username) + '</td><td>' + (u.role === 'admin' ? 'Administrator' : 'Head of Office (view only)') + '</td><td>' + (u.active ? 'Active' : '<span class="void">Turned off</span>') + (u.mustChange ? ' <span class="muted">(must change password)</span>' : '') + '</td>' +
+          return '<tr><td>' + esc(u.name) + '</td><td>' + esc(u.username) + '</td><td>' + (u.role === 'admin' ? 'Administrator' : u.role === 'staff' ? 'Staff (view only)' : 'Head of Office (view only)') + '</td><td>' + (u.active ? 'Active' : '<span class="void">Turned off</span>') + (u.mustChange ? ' <span class="muted">(must change password)</span>' : '') + '</td>' +
             '<td class="r"><button type="button" class="btn small alt" data-reset="' + esc(u.id) + '">Reset password</button> ' + (u.id !== me.id ? '<button type="button" class="btn small alt" data-toggle="' + esc(u.id) + '" data-active="' + (u.active ? '1' : '0') + '">' + (u.active ? 'Turn off' : 'Turn on') + '</button>' : '') + '</td></tr>';
         }).join('') + '</tbody></table></div></div>' +
         '<div class="pane"><h2>Add a person</h2><div id="uerr"></div><form id="uf"><div class="row"><div class="field"><label for="un">Full name</label><input id="un" required></div><div class="field"><label for="uu">Username</label><input id="uu" autocapitalize="off" required></div></div>' +
-        '<div class="row"><div class="field"><label for="ur">Role</label><select id="ur"><option value="head">Head of Office (view only)</option><option value="admin">Administrator</option></select></div><div class="field"><label for="up">Temporary password</label><input id="up" type="text" minlength="8" autocomplete="off" required><span class="hint">They must choose their own at first sign-in.</span></div></div>' +
+        '<div class="row"><div class="field"><label for="ur">Role</label><select id="ur"><option value="head">Head of Office (view only)</option><option value="staff">Staff (view only)</option><option value="admin">Administrator</option></select></div><div class="field"><label for="up">Temporary password</label><input id="up" type="text" minlength="8" autocomplete="off" required><span class="hint">They must choose their own at first sign-in.</span></div></div>' +
         '<button class="btn" type="submit">Add person</button></form></div>';
       $('#uf').onsubmit = function (e) {
         e.preventDefault();

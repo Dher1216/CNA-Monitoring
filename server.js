@@ -305,7 +305,7 @@ app.get('/api/users', auth.requireAdmin, (req, res) => res.json({ users: store.u
 app.post('/api/users', auth.requireAdmin, wrap(async (req, res) => {
   const username = clean(req.body.username, 40).toLowerCase();
   const name = clean(req.body.name, 80);
-  const role = req.body.role === 'admin' ? 'admin' : 'head';
+  const role = ['admin', 'head', 'staff'].includes(req.body.role) ? req.body.role : 'head';
   const password = String(req.body.password || '');
   if (!/^[a-z0-9._-]{3,40}$/.test(username)) return bad(res, 'Use 3 to 40 letters, numbers, dots, dashes or underscores for the username.');
   if (!name) return bad(res, 'Enter the person\'s name.');
