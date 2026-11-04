@@ -335,3 +335,17 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .install-banner .ib-text span { color: var(--v200); }
 .install-banner .ib-x { background: none; border: 0; color: var(--v200); font: inherit; font-size: .85rem; cursor: pointer; padding: 8px 4px; text-decoration: underline; }
 @media print { .install-banner { display: none !important; } }
+
+/* office search box in the report picker */
+.combo { position: relative; min-width: 260px; max-width: 360px; }
+.picker .combo-input { width: 100%; padding: 8px 34px 8px 10px; border: 1px solid var(--v300); background: #fff; border-radius: 3px; font: inherit; }
+.picker .combo-input:focus { outline: 3px solid var(--v300); border-color: var(--v600); }
+.combo-btn { position: absolute; right: 1px; top: 1px; bottom: 1px; width: 30px; border: 0; background: transparent; color: var(--v700); cursor: pointer; border-radius: 0 3px 3px 0; }
+.combo-btn:hover { background: var(--v50); }
+.combo-list { position: absolute; left: 0; right: 0; top: 100%; margin: 2px 0 0; padding: 4px 0; list-style: none; max-height: 280px; overflow-y: auto; background: #fff; border: 1px solid var(--v300); border-radius: 3px; box-shadow: 0 6px 18px rgba(42, 22, 88, .18); z-index: 40; }
+.combo-list[hidden] { display: none; }
+.combo-list li { padding: 8px 12px; cursor: pointer; line-height: 1.3; }
+.combo-list li.on, .combo-list li:hover { background: var(--v100); color: var(--v900); }
+.combo-list li[aria-selected="true"] { font-weight: 600; }
+.combo-list li.none { color: #6b6480; cursor: default; font-style: italic; }
+.combo-list li.none:hover { background: transparent; }

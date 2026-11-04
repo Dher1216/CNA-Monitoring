@@ -306,6 +306,57 @@
     if (st.office && st.office !== 'all' && !offices.some(function (x) { return x.code === st.office; })) st.office = '';
 
     function opt(v, l, cur) { return '<option value="' + esc(v) + '"' + (cur === v ? ' selected' : '') + '>' + esc(l) + '</option>'; }
+    // ----- office search box (type to filter; tap the arrow or the box to see every office)
+    var ALL_LABEL = 'All offices (all account details)';
+    function officeLabel(code) {
+      if (code === 'all') return ALL_LABEL;
+      for (var i = 0; i < offices.length; i++) if (offices[i].code === code) return offices[i].name;
+      return '';
+    }
+    function officeChoices(q) {
+      var words = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
+      var all = [{ code: 'all', name: ALL_LABEL }].concat(offices.map(function (x) { return { code: x.code, name: x.name }; }));
+      if (!words.length) return all;
+      return all.filter(function (c) {
+        var n = c.name.toLowerCase();
+        return words.every(function (w) { return n.indexOf(w) !== -1; });
+      });
+    }
+    var combo = { active: -1, items: [] };
+    function comboEls() {
+      return { input: el.querySelector('#pk-office'), list: el.querySelector('#pk-office-list') };
+    }
+    function comboClose() {
+      var c = comboEls(); if (!c.input) return;
+      c.list.hidden = true; c.input.setAttribute('aria-expanded', 'false'); c.input.removeAttribute('aria-activedescendant'); combo.active = -1;
+    }
+    function comboShow(query) {
+      var c = comboEls(); if (!c.input) return;
+      combo.items = officeChoices(query);
+      combo.active = combo.items.length && query ? 0 : -1;
+      c.list.innerHTML = combo.items.length ? combo.items.map(function (x, i) {
+        return '<li role="option" id="pk-office-o' + i + '" data-pick="' + i + '"' + (x.code === st.office ? ' aria-selected="true"' : '') + (i === combo.active ? ' class="on"' : '') + '>' + esc(x.name) + '</li>';
+      }).join('') : '<li class="none" role="presentation">No office matches what you typed.</li>';
+      c.list.hidden = false; c.input.setAttribute('aria-expanded', 'true');
+      comboMark();
+    }
+    function comboMark() {
+      var c = comboEls(); if (!c.input) return;
+      var nodes = c.list.querySelectorAll('[data-pick]');
+      for (var i = 0; i < nodes.length; i++) nodes[i].className = (i === combo.active) ? 'on' : '';
+      if (combo.active >= 0 && nodes[combo.active]) {
+        c.input.setAttribute('aria-activedescendant', nodes[combo.active].id);
+        if (nodes[combo.active].scrollIntoView) nodes[combo.active].scrollIntoView({ block: 'nearest' });
+      } else c.input.removeAttribute('aria-activedescendant');
+    }
+    function comboPick(i) {
+      var x = combo.items[i]; if (!x) return;
+      st.office = x.code;
+      comboClose();
+      if (o.onState) o.onState(view, st);
+      draw();
+    }
+
     function picker() {
       var h = '<div class="picker no-print"><div class="field"><label for="pk-report">Report</label><select id="pk-report" data-sel="report"><option value="">Choose a report</option>' +
         REPORTS.map(function (r) { return opt(r.key, r.label, st.report); }).join('') + '</select></div>';
@@ -314,8 +365,10 @@
           BASES.map(function (b) { return opt(b.key, b.label, st.basis); }).join('') + '</select></div>';
       }
       if (st.report === 'offices') {
-        h += '<div class="field"><label for="pk-office">Office</label><select id="pk-office" data-sel="office"><option value="">Choose an office</option>' + opt('all', 'All offices (all account details)', st.office) +
-          offices.map(function (x) { return opt(x.code, x.name, st.office); }).join('') + '</select></div>';
+        h += '<div class="field"><label for="pk-office">Office</label><div class="combo">' +
+          '<input id="pk-office" class="combo-input" type="text" role="combobox" aria-expanded="false" aria-controls="pk-office-list" aria-autocomplete="list" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Type to search, or tap to choose" value="' + esc(officeLabel(st.office)) + '">' +
+          '<button type="button" class="combo-btn" data-combo="toggle" tabindex="-1" aria-label="Show all offices">&#9662;</button>' +
+          '<ul id="pk-office-list" class="combo-list" role="listbox" hidden></ul></div></div>';
       }
       return h + '</div>';
     }
@@ -351,7 +404,52 @@
         if (o.onState) o.onState(view, st);
         draw(s);
       });
+      el.addEventListener('input', function (e) {
+        if (e.target.id === 'pk-office') comboShow(e.target.value);
+      });
+      el.addEventListener('focusin', function (e) {
+        if (e.target.id === 'pk-office') { try { e.target.select(); } catch (x) {} comboShow(''); }
+      });
+      el.addEventListener('focusout', function (e) {
+        if (e.target.id !== 'pk-office') return;
+        var inp = e.target;
+        setTimeout(function () {
+          if (document.activeElement === inp) return;
+          comboClose();
+          if (inp.value !== officeLabel(st.office)) inp.value = officeLabel(st.office); // typed text that was never chosen is dropped
+        }, 120);
+      });
+      el.addEventListener('keydown', function (e) {
+        if (e.target.id !== 'pk-office') return;
+        var c = comboEls(), open = !c.list.hidden, k = e.key;
+        if (k === 'ArrowDown' || k === 'ArrowUp') {
+          e.preventDefault();
+          if (!open) { comboShow(''); return; }
+          if (!combo.items.length) return;
+          combo.active = (combo.active + (k === 'ArrowDown' ? 1 : -1) + combo.items.length) % combo.items.length;
+          comboMark();
+        } else if (k === 'Enter') {
+          if (!open) return;
+          e.preventDefault();
+          if (combo.active < 0 && combo.items.length === 1) combo.active = 0;
+          if (combo.active >= 0) comboPick(combo.active);
+        } else if (k === 'Escape') {
+          if (open) { e.preventDefault(); comboClose(); e.target.value = officeLabel(st.office); }
+        }
+      });
+      // keep focus in the box while an office is picked with the mouse or a finger
+      el.addEventListener('mousedown', function (e) {
+        if (e.target.closest && e.target.closest('.combo-list, .combo-btn')) e.preventDefault();
+      });
       el.addEventListener('click', function (e) {
+        var li = e.target.closest ? e.target.closest('[data-pick]') : null;
+        if (li) { comboPick(parseInt(li.getAttribute('data-pick'), 10)); return; }
+        var tg = e.target.closest ? e.target.closest('[data-combo]') : null;
+        if (tg) {
+          var c = comboEls();
+          if (c.list.hidden) { c.input.focus(); comboShow(''); } else comboClose();
+          return;
+        }
         var b = e.target.closest ? e.target.closest('[data-act],[data-view]') : null;
         if (!b) return;
         if (b.getAttribute('data-act') === 'print' && !b.disabled) window.print();
