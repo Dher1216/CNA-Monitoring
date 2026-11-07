@@ -203,20 +203,21 @@
 
   // ---------- Per office report
   function hasBal(a) { return Number(a.approp) || Number(a.allot); }
-  function officeBlock(m, o, basis) {
+  // Same layout as the per fund source report: net amounts first, voided fund sources in red at the right.
+  function officeTable(o, basis) {
+    var zero = { approp: 0, allot: 0, overall: 0 };
+    var vkey = basis === 'approp' ? 'approp' : 'overall';
     var body = '';
     o.accounts.filter(hasBal).forEach(function (a) {
-      body += '<tr><th scope="row"><span class="acode">' + esc(a.code) + '</span>' + esc(a.account) + '</th>' + cells(basis, a) + '</tr>';
+      body += '<tr><th scope="row"><span class="acode">' + esc(a.code) + '</span>' + esc(a.account) + '</th>' + cells(basis, a.voided ? zero : a) + '<td>' + red(a.voided ? a[vkey] : 0) + '</td></tr>';
     });
-    var vrows = o.accounts.filter(function (a) { return a.voided && (a.approp || a.allot); });
-    var vbody = '';
-    vrows.forEach(function (a) {
-      vbody += '<tr class="is-voided"><th scope="row">Less: ' + esc(a.account) + '</th>' + redCells(basis, a) + '</tr>';
-    });
-    return '<section class="ofc"><h3><span class="oname">' + esc(o.name) + '</span><span class="acode">' + esc(o.code) + '</span></h3>' +
-      '<div class="tbl-scroll"><table class="tbl tbl-ofc"><thead><tr>' + head(basis, 'Fund source') + '</tr></thead><tbody>' + body +
-      '<tr class="sub-gross"><th scope="row">Total before voided fund sources</th>' + pesoCells(basis, o.gross, '') + '</tr>' + vbody + '</tbody>' +
-      '<tfoot><tr class="foot-net"><th scope="row">Net available fund of ' + esc(o.name) + '</th>' + pesoCells(basis, o.net, 'grand-cell') + '</tr></tfoot></table></div></section>';
+    var h = '<thead><tr>' + head(basis, 'Fund source') + '<th scope="col" class="num void-head">Voided<small>deducted</small></th></tr></thead>';
+    var foot = '<tfoot><tr class="foot-net"><th scope="row">Net available fund of ' + esc(o.name) + '</th>' + pesoCells(basis, o.net, 'grand-cell') + '<td class="void">' + (o.voided[vkey] ? '(' + peso(o.voided[vkey]) + ')' : '<span class="nil">–</span>') + '</td></tr>' +
+      '<tr class="foot-gross"><th scope="row">Total per e-budget, before voided</th>' + pesoCells(basis, o.gross, '') + '<td></td></tr></tfoot>';
+    return '<div class="tbl-scroll"><table class="tbl tbl-accounts tbl-ofc">' + h + '<tbody>' + body + '</tbody>' + foot + '</table></div>';
+  }
+  function officeBlock(m, o, basis) {
+    return '<section class="ofc"><h3><span class="oname">' + esc(o.name) + '</span><span class="acode">' + esc(o.code) + '</span></h3>' + officeTable(o, basis) + '</section>';
   }
   function officesReport(m, opts, basis, officeCode) {
     var all = officeCode === 'all';
@@ -225,25 +226,11 @@
     if (!all && !one) return '';
     var html = '<article class="sheet" id="report">' + header(m, opts, 'Per office report: ' + (all ? 'All offices' : one.name) + ', ' + label(BASES, basis));
     if (!all) {
-      var o = one;
-      var body = '';
-      o.accounts.filter(hasBal).forEach(function (a) {
-        body += '<tr><th scope="row"><span class="acode">' + esc(a.code) + '</span>' + esc(a.account) + '</th>' + cells(basis, a) + '</tr>';
-      });
-      html += '<section class="block" id="gross"><h2>Fund sources of ' + esc(o.name) + '</h2><p class="muted">Before the voided fund sources are removed. Fund sources with no balance in this office are not listed.</p>' +
-        '<div class="tbl-scroll"><table class="tbl tbl-ofc"><thead><tr>' + head(basis, 'Fund source') + '</tr></thead><tbody>' + body + '</tbody>' +
-        '<tfoot><tr class="foot-net"><th scope="row">Total before voided fund sources</th>' + pesoCells(basis, o.gross, 'grand-cell') + '</tr></tfoot></table></div></section>';
-      var vrows = o.accounts.filter(function (a) { return a.voided && (a.approp || a.allot); }).map(function (a) {
-        var r = remarkFor(m, a.account);
-        return { code: a.code, account: a.account, approp: a.approp, allot: a.allot, overall: a.overall, officeRemark: r.officeRemark, reason: r.reason, dateVoided: r.dateVoided };
-      });
-      html += '<section class="block block-void" id="voided"><h2>Voided fund sources</h2>' + (vrows.length
-        ? '<p class="muted">Voided in every office. These are the amounts in ' + esc(o.name) + '.</p>' + voidedFundTable(basis, vrows, o.voided, true)
-        : '<p class="muted">No voided fund sources in ' + esc(o.name) + '.</p>') + '</section>';
-      html += netBox('Net available fund of ' + o.name, o.gross, o.voided, o.net, basis);
+      html += '<section class="block" id="gross"><h2>Fund sources of ' + esc(one.name) + '</h2><p class="muted">Voided fund sources are shown at the right and are not counted in the net available fund. Fund sources with no balance in this office are not listed.</p>' +
+        officeTable(one, basis) + '</section>';
       return html + footer(m) + '</article>';
     }
-    html += '<p class="muted">Fund sources with no balance in an office are not listed under that office.</p>';
+    html += '<p class="muted">Voided fund sources are shown at the right of each table and are not counted in the net available fund. Fund sources with no balance in an office are not listed under that office.</p>';
     m.offices.forEach(function (o) { html += officeBlock(m, o, basis); });
     var t = m.totals;
     html += netBox('All offices: net available fund for CNA', t.gross, t.voided, t.net, basis, basis === 'approp' ? m.requirement.optionA : m.requirement.optionB, m.requirement.required);
