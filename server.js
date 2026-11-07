@@ -17,7 +17,7 @@ const path = require('path');
 const store = require('./lib/store');
 const auth = require('./lib/auth');
 const { parseWorkbook, norm } = require('./lib/parse');
-const { computeModel } = require('./lib/compute');
+const { computeModel, selectionOf } = require('./lib/compute');
 const { buildWorkbook, buildReportWorkbook } = require('./lib/exportXlsx');
 const snapshot = require('./lib/snapshot');
 
@@ -74,6 +74,25 @@ function modelFor(revision) {
   const upload = loadUpload(revision.uploadId);
   if (!upload) return null;
   return computeModel({ upload, revision, params: revision.params, voids: revision.voids });
+}
+// What a new version keeps from the current one (everything except what the change itself alters).
+function carry(cur) {
+  const up = loadUpload(cur.uploadId);
+  return { uploadId: cur.uploadId, params: cur.params, voids: cur.voids || [], fundSources: selectionOf(cur, up) };
+}
+const nameList = (list, max = 5) => list.slice(0, max).join('; ') + (list.length > max ? ` and ${list.length - max} more` : '');
+// Every account line in the uploaded report, one entry per account, summed over the offices.
+function reportAccounts(up) {
+  const map = new Map();
+  for (const o of up.offices) {
+    for (const r of o.rows) {
+      const k = norm(r.account);
+      let e = map.get(k);
+      if (!e) { e = { code: r.code, account: r.account, offices: 0, approp: 0, allot: 0 }; map.set(k, e); }
+      e.offices++; e.approp += Math.round(r.approp * 100); e.allot += Math.round(r.allot * 100);
+    }
+  }
+  return map;
 }
 async function addRevision(partial, user) {
   const s = store.state.load();
@@ -166,7 +185,7 @@ app.get('/api/report.xlsx', auth.requireAuth, wrap(async (req, res) => {
   res.end();
 }));
 
-const ACTION_LABEL = { upload: 'E-budget upload', params: 'Figures changed', 'void-add': 'Fund source voided', 'void-remove': 'Void removed', restore: 'Version restored' };
+const ACTION_LABEL = { upload: 'E-budget upload', params: 'Figures changed', 'void-add': 'Fund source voided', 'void-remove': 'Void removed', restore: 'Version restored', sources: 'Fund sources changed' };
 app.get('/api/revisions', auth.requireAuth, wrap(async (req, res) => {
   const s = store.state.load();
   const cur = store.state.current(s);
@@ -193,7 +212,7 @@ app.post('/api/upload', auth.requireAdmin, wrap(async (req, res) => {
   const prev = store.state.current();
   const prevUpload = prev ? loadUpload(prev.uploadId) : null;
   let parsed;
-  try { parsed = await parseWorkbook(req.body, { fallbackFundSources: prevUpload ? prevUpload.fundSources : DEFAULT_FUND_SOURCES, fallbackIsDefault: !prevUpload }); } catch (e) { return bad(res, e.message); }
+  try { parsed = await parseWorkbook(req.body, { fallbackFundSources: prevUpload ? selectionOf(prev, prevUpload) : DEFAULT_FUND_SOURCES, fallbackIsDefault: !prevUpload }); } catch (e) { return bad(res, e.message); }
   const filename = clean(decodeURIComponent(req.headers['x-filename'] || 'upload.xls'), 120);
   const fy = /FY\s*(\d{4})/i.exec(parsed.legalBasis || '');
   const guessYear = fy ? Number(fy[1]) : parsed.reportAsOf ? Number(parsed.reportAsOf.slice(0, 4)) : DEFAULTS.year;
@@ -203,17 +222,19 @@ app.post('/api/upload', auth.requireAdmin, wrap(async (req, res) => {
     id: uploadId, filename, uploadedAt: new Date().toISOString(), uploadedBy: req.user.name || req.user.username,
     reportAsOf: parsed.reportAsOf || todayManila(), legalBasis: parsed.legalBasis, fundAccount: parsed.fundAccount,
     fundSources: parsed.fundSources, fundSourcesFrom: parsed.fundSourcesFrom, offices: parsed.offices, ignored: parsed.ignored,
+    allAccounts: true, accountCount: parsed.accountCount,
     unmatchedFundSources: parsed.unmatchedFundSources, warnings: parsed.warnings, check: parsed.check,
   };
   store.uploads.save(uploadId, upload);
   uploadCache.set(uploadId, upload);
-  const rev = await addRevision({ action: 'upload', uploadId, params, voids: prev ? prev.voids : [], note: filename }, req.user);
+  const rev = await addRevision({ action: 'upload', uploadId, params, voids: prev ? prev.voids : [], fundSources: parsed.fundSources, note: filename }, req.user);
   const model = modelFor(rev);
   res.json({
     ok: true, revisionId: rev.id,
     summary: {
       asOf: upload.reportAsOf, offices: model.offices.length, fundSources: upload.fundSources.length - upload.unmatchedFundSources.length,
-      fundSourcesListed: upload.fundSources.length, fundSourcesFrom: upload.fundSourcesFrom, ignoredAccounts: upload.ignored.accounts,
+      fundSourcesListed: upload.fundSources.length, fundSourcesFrom: upload.fundSourcesFrom, ignoredAccounts: model.ignored ? model.ignored.accounts : 0,
+      accountsInReport: upload.accountCount,
       netOverall: model.totals.net.overall, warnings: upload.warnings, check: upload.check, year: params.year,
     },
   });
@@ -233,7 +254,7 @@ app.put('/api/params', auth.requireAdmin, wrap(async (req, res) => {
   if (params.year !== cur.params.year) parts.push(`year ${cur.params.year} to ${params.year}`);
   if (params.employees !== cur.params.employees) parts.push(`employees ${cur.params.employees.toLocaleString('en-US')} to ${params.employees.toLocaleString('en-US')}`);
   if (params.amountPerEmployee !== cur.params.amountPerEmployee) parts.push(`amount per employee ${cur.params.amountPerEmployee.toLocaleString('en-US')} to ${params.amountPerEmployee.toLocaleString('en-US')}`);
-  const rev = await addRevision({ action: 'params', uploadId: cur.uploadId, params, voids: cur.voids, note: `Changed ${parts.join('; ')}` }, req.user);
+  const rev = await addRevision({ ...carry(cur), action: 'params', params, note: `Changed ${parts.join('; ')}` }, req.user);
   res.json({ ok: true, revisionId: rev.id });
 }));
 
@@ -241,8 +262,9 @@ app.get('/api/options', auth.requireAuth, wrap(async (req, res) => {
   const cur = store.state.current();
   if (!cur) return res.json({ accounts: [], params: null, voids: [] });
   const up = loadUpload(cur.uploadId);
+  const sel = new Set(selectionOf(cur, up).map(norm));
   const seen = new Map();
-  for (const o of up.offices) for (const r of o.rows) if (!seen.has(norm(r.account))) seen.set(norm(r.account), { code: r.code, account: r.account });
+  for (const o of up.offices) for (const r of o.rows) if (sel.has(norm(r.account)) && !seen.has(norm(r.account))) seen.set(norm(r.account), { code: r.code, account: r.account });
   res.json({
     params: cur.params,
     accounts: [...seen.values()].sort((x, y) => String(x.code).localeCompare(String(y.code))),
@@ -251,29 +273,86 @@ app.get('/api/options', auth.requireAuth, wrap(async (req, res) => {
   });
 }));
 
+// ---------- admin: which accounts are the CNA fund sources
+// The choices are every account line of the uploaded e-budget report.
+app.get('/api/fund-sources', auth.requireAdmin, wrap(async (req, res) => {
+  const cur = store.state.current();
+  if (!cur) return res.json({ empty: true });
+  const up = loadUpload(cur.uploadId);
+  const sel = selectionOf(cur, up);
+  const selSet = new Set(sel.map(norm));
+  const voidSet = new Set((cur.voids || []).map((v) => norm(v.account)));
+  const map = reportAccounts(up);
+  const accounts = [...map.entries()]
+    .sort((a, b) => String(a[1].code).localeCompare(String(b[1].code)) || a[1].account.localeCompare(b[1].account))
+    .map(([k, e]) => ({ code: e.code, account: e.account, offices: e.offices, approp: e.approp / 100, allot: e.allot / 100, overall: (e.approp + e.allot) / 100, selected: selSet.has(k), voided: voidSet.has(k) }));
+  const missing = sel.filter((n) => !map.has(norm(n)));
+  res.json({ legacy: !up.allAccounts, reportAsOf: up.reportAsOf, filename: up.filename, accounts, missing, selectedCount: sel.length });
+}));
+
+app.put('/api/fund-sources', auth.requireAdmin, wrap(async (req, res) => {
+  const cur = store.state.current();
+  if (!cur) return bad(res, 'Upload the e-budget report first.');
+  const up = loadUpload(cur.uploadId);
+  const list = req.body && req.body.accounts;
+  if (!Array.isArray(list) || list.length > 5000) return bad(res, 'Choose at least one fund source.');
+  const known = reportAccounts(up);
+  const before = selectionOf(cur, up);
+  const beforeKeys = new Set(before.map(norm));
+  const next = [], seen = new Set();
+  for (const raw of list) {
+    const name = clean(raw, 200), k = norm(name);
+    if (!k || seen.has(k)) continue;
+    // Only accounts in the report can be added. One that was already selected but is missing from this report may stay.
+    const canon = known.has(k) ? known.get(k).account : (beforeKeys.has(k) ? before.find((n) => norm(n) === k) : null);
+    if (!canon) return bad(res, `"${name}" is not an account in the uploaded report.`);
+    seen.add(k); next.push(canon);
+  }
+  if (!next.length) return bad(res, 'Choose at least one fund source.');
+  const stillVoided = (cur.voids || []).filter((v) => !seen.has(norm(v.account)));
+  if (stillVoided.length) return bad(res, `These fund sources are voided, so they cannot be taken off the list yet. Remove the void first: ${nameList(stillVoided.map((v) => v.account))}.`);
+  const added = next.filter((n) => !beforeKeys.has(norm(n)));
+  const removed = before.filter((n) => !seen.has(norm(n)));
+  if (!added.length && !removed.length) return res.json({ ok: true, unchanged: true });
+  const note = `${next.length} fund sources selected` + (added.length ? `. Added: ${nameList(added)}` : '') + (removed.length ? `. Removed: ${nameList(removed)}` : '');
+  const rev = await addRevision({ ...carry(cur), action: 'sources', fundSources: next, note }, req.user);
+  res.json({ ok: true, revisionId: rev.id, added: added.length, removed: removed.length, selected: next.length });
+}));
+
 // ---------- admin: voided fund sources
 // A void applies to the fund source in every office. The office named is a remark only.
 app.post('/api/voids', auth.requireAdmin, wrap(async (req, res) => {
   const cur = store.state.current();
   if (!cur) return bad(res, 'Upload the e-budget report first.');
   const up = loadUpload(cur.uploadId);
-  const account = clean(req.body.account, 200);
+  const asked = Array.isArray(req.body.accounts) ? req.body.accounts : (req.body.account ? [req.body.account] : []);
   const officeRemark = clean(req.body.officeRemark, 200);
   const reason = clean(req.body.reason, 500);
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.dateVoided || '')) ? req.body.dateVoided : todayManila();
-  if (!account) return bad(res, 'Choose the fund source to void.');
+  if (!asked.length || asked.length > 500) return bad(res, 'Choose the fund source or fund sources to void.');
   if (!officeRemark) return bad(res, 'State the office.');
   if (!reason) return bad(res, 'State the reason for voiding.');
-  let canon = null;
-  for (const o of up.offices) { const r = o.rows.find((x) => norm(x.account) === norm(account)); if (r) { canon = r.account; break; } }
-  if (!canon) return bad(res, 'Choose a fund source that is in the report.');
-  if ((cur.voids || []).some((v) => norm(v.account) === norm(canon))) return bad(res, 'That fund source is already voided.');
-  const added = { id: store.id(), account: canon, officeRemark, reason, dateVoided: date, addedBy: req.user.name || req.user.username };
+  const selected = new Set(selectionOf(cur, up).map(norm));
+  const known = reportAccounts(up);
+  const already = new Set((cur.voids || []).map((v) => norm(v.account)));
+  const who = req.user.name || req.user.username;
+  const added = [], seen = new Set();
+  for (const raw of asked) {
+    const k = norm(clean(raw, 200));
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    const e = known.get(k);
+    if (!e || !selected.has(k)) return bad(res, 'Choose fund sources that are selected and in the report.');
+    if (already.has(k)) return bad(res, `${e.account} is already voided.`);
+    added.push({ id: store.id(), account: e.account, officeRemark, reason, dateVoided: date, addedBy: who });
+  }
+  if (!added.length) return bad(res, 'Choose the fund source or fund sources to void.');
+  const names = added.map((v) => v.account);
   const rev = await addRevision({
-    action: 'void-add', uploadId: cur.uploadId, params: cur.params, voids: [...(cur.voids || []), added],
-    note: `${canon}, voided in all offices. Office: ${officeRemark}. Reason: ${reason}`,
+    ...carry(cur), action: 'void-add', voids: [...(cur.voids || []), ...added],
+    note: (added.length === 1 ? `${names[0]}, voided in all offices.` : `${added.length} fund sources voided in all offices: ${nameList(names)}.`) + ` Office: ${officeRemark}. Reason: ${reason}`,
   }, req.user);
-  res.json({ ok: true, revisionId: rev.id });
+  res.json({ ok: true, revisionId: rev.id, count: added.length });
 }));
 
 app.delete('/api/voids/:id', auth.requireAdmin, wrap(async (req, res) => {
@@ -284,8 +363,23 @@ app.delete('/api/voids/:id', auth.requireAdmin, wrap(async (req, res) => {
   const reason = clean(req.body && req.body.reason, 300);
   if (!reason) return bad(res, 'State why the void is being removed.');
   const voids = cur.voids.filter((x) => x.id !== v.id);
-  await addRevision({ action: 'void-remove', uploadId: cur.uploadId, params: cur.params, voids, note: `${v.account}. Reason for removing the void: ${reason}` }, req.user);
+  await addRevision({ ...carry(cur), action: 'void-remove', voids, note: `${v.account}. Reason for removing the void: ${reason}` }, req.user);
   res.json({ ok: true });
+}));
+
+// Remove several voids at once, with one reason.
+app.post('/api/voids/remove', auth.requireAdmin, wrap(async (req, res) => {
+  const cur = store.state.current();
+  if (!cur) return bad(res, 'Nothing to change.');
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.map((x) => String(x)) : [];
+  const reason = clean(req.body.reason, 300);
+  if (!ids.length) return bad(res, 'Choose the voided fund sources to remove.');
+  if (!reason) return bad(res, 'State why the voids are being removed.');
+  const gone = (cur.voids || []).filter((x) => ids.includes(x.id));
+  if (gone.length !== new Set(ids).size) return bad(res, 'One of those voided fund sources was not found. Reload the page and try again.', 404);
+  const voids = cur.voids.filter((x) => !ids.includes(x.id));
+  await addRevision({ ...carry(cur), action: 'void-remove', voids, note: `${gone.length === 1 ? gone[0].account : gone.length + ' voids removed: ' + nameList(gone.map((v) => v.account))}. Reason for removing: ${reason}` }, req.user);
+  res.json({ ok: true, count: gone.length });
 }));
 
 app.post('/api/revisions/:id/restore', auth.requireAdmin, wrap(async (req, res) => {
@@ -295,7 +389,7 @@ app.post('/api/revisions/:id/restore', auth.requireAdmin, wrap(async (req, res) 
   const cur = store.state.current(s);
   if (r.id === cur.id) return bad(res, 'That version is already the current one.');
   const up = loadUpload(r.uploadId);
-  await addRevision({ action: 'restore', uploadId: r.uploadId, params: r.params, voids: r.voids, note: `Restored the version of ${new Date(r.at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })} (report as of ${up ? up.reportAsOf : ''})` }, req.user);
+  await addRevision({ action: 'restore', uploadId: r.uploadId, params: r.params, voids: r.voids, fundSources: selectionOf(r, up), note: `Restored the version of ${new Date(r.at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })} (report as of ${up ? up.reportAsOf : ''})` }, req.user);
   res.json({ ok: true });
 }));
 

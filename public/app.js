@@ -72,7 +72,7 @@
   // ---------- shell
   function shell(active, inner) {
     var links = [['dashboard', 'Dashboard'], ['reports', 'Reports'], ['history', 'History']];
-    if (me.role === 'admin') links.push(['data', 'Upload and figures'], ['voids', 'Voided funds'], ['users', 'People']);
+    if (me.role === 'admin') links.push(['data', 'Upload and figures'], ['sources', 'Fund sources'], ['voids', 'Voided funds'], ['users', 'People']);
     app.innerHTML = '<header class="topbar no-print"><div class="topbar-in">' +
       '<a class="brand" href="#/dashboard"><img src="/seal.png" alt=""><span><b>CNA Fund Monitor</b><span>Province of Antique, Provincial Budget Office</span></span></a>' +
       '<nav class="nav" aria-label="Main">' + links.map(function (l) { return '<a href="#/' + l[0] + '"' + (l[0] === active ? ' aria-current="page"' : '') + '>' + l[1] + '</a>'; }).join('') + '</nav>' +
@@ -201,7 +201,7 @@
       var o = res[0], b = res[1];
       var p = o.params || { year: new Date().getFullYear(), employees: 1245, amountPerEmployee: 30000 };
       $('#dat').innerHTML =
-        '<div class="pane"><h2>Upload the e-budget report</h2><p class="muted">Upload the report exactly as the e-budget system exports it (.xls or .xlsx). The app keeps only the CNA fund sources and ignores other accounts. The list of CNA fund sources is remembered from one upload to the next; to change the list, upload a workbook that also has a sheet named <strong>CNA Fund Source</strong>. The new upload becomes the latest report and the old one stays in the history.</p>' +
+        '<div class="pane"><h2>Upload the e-budget report</h2><p class="muted">Upload the report exactly as the e-budget system exports it (.xls or .xlsx). The app reads every account in the report. You choose which accounts are the CNA fund sources on the <a href="#/sources">Fund sources</a> page, and your choice is remembered from one upload to the next. (If the workbook also has a sheet named <strong>CNA Fund Source</strong>, the accounts on that sheet become the selection.) The new upload becomes the latest report and the old one stays in the history.</p>' +
         '<div id="uerr"></div><div class="drop" id="drop"><p>Drop the Excel file here, or</p><label class="btn alt" for="file" style="cursor:pointer">Choose file</label><input id="file" type="file" accept=".xls,.xlsx" hidden></div><div id="ures"></div></div>' +
         '<div class="pane"><h2>Figures for the incentive</h2><p class="muted">Change these when the year, the headcount or the amount changes. Each change is recorded in the history.</p>' +
         '<div id="ferr"></div><form id="ff"><div class="row">' +
@@ -243,8 +243,8 @@
         $('#uerr').innerHTML = ''; $('#ures').innerHTML = '<p class="muted">Reading ' + esc(file.name) + '</p>';
         file.arrayBuffer().then(function (buf) { return api('/api/upload', { method: 'POST', raw: buf, filename: file.name }); }).then(function (d) {
           var s = d.summary;
-          $('#ures').innerHTML = msg('ok', 'Uploaded. This is now the latest report.') + '<ul class="summary-list"><li>Report date: <strong>' + esc(R.longDate(s.asOf)) + '</strong></li><li>' + s.offices + ' offices, ' + s.fundSources + ' of ' + s.fundSourcesListed + ' CNA fund sources found</li><li>' + s.ignoredAccounts + ' lines for other accounts ignored</li><li>Overall available balance: <strong>' + peso(s.netOverall) + '</strong></li>' +
-            '<li>CNA fund source list: ' + (s.fundSourcesFrom === 'previous' ? 'kept from the previous upload' : s.fundSourcesFrom === 'default' ? 'the 33-account list supplied with the app' : 'read from the file') + '</li>' +
+          $('#ures').innerHTML = msg('ok', 'Uploaded. This is now the latest report.') + '<ul class="summary-list"><li>Report date: <strong>' + esc(R.longDate(s.asOf)) + '</strong></li><li>' + s.offices + ' offices, ' + (s.accountsInReport || 0) + ' accounts in the report</li><li>' + s.fundSources + ' of ' + s.fundSourcesListed + ' selected fund sources found in this report</li><li>' + s.ignoredAccounts + ' lines for accounts that are not selected are left out</li><li>Overall available balance: <strong>' + peso(s.netOverall) + '</strong></li>' +
+            '<li>Fund source selection: ' + (s.fundSourcesFrom === 'previous' ? 'kept from the previous upload' : s.fundSourcesFrom === 'default' ? 'the 33-account list supplied with the app' : s.fundSourcesFrom === 'none' ? 'none yet' : 'read from the CNA Fund Source sheet in the file') + '. <a href="#/sources">Change the fund sources</a></li>' +
             (s.check ? '<li>' + (s.check.ok ? 'Check passed: the account lines add up to the report\'s Grand Total' + (s.check.skipped.length ? ' for ' + esc(s.check.verified.join(' and ')) + '. The Grand Total for ' + esc(s.check.skipped.join(' and ')) + ' is blank in this file, so it could not be compared.' : '.') : 'Check failed: the account lines do not add up to the report\'s Grand Total.') + '</li>' : '') + '</ul>' +
             s.warnings.map(function (w) { return msg('warn', w); }).join('') + '<a class="btn" href="#/dashboard">View the dashboard</a>';
         }).catch(function (er) { $('#ures').innerHTML = ''; $('#uerr').innerHTML = msg('err', errText(er)); });
@@ -257,32 +257,149 @@
     }).catch(function (e) { $('#dat').innerHTML = msg('err', errText(e)); });
   }
 
+
+  // ---------- a searchable checklist (used to choose fund sources and fund sources to void)
+  // items: [{ code, title, note, amount, checked, locked }]. Returns { selected() }.
+  function pickList(host, items, opts) {
+    opts = opts || {};
+    var h = '<div class="pick"><div class="pick-bar"><div class="field pick-search"><label for="pk-q">Search</label><input id="pk-q" type="search" autocomplete="off" placeholder="Type part of a name or code"></div>';
+    if (opts.filter) h += '<div class="field"><label for="pk-f">Show</label><select id="pk-f"><option value="all">All accounts</option><option value="on">Selected only</option><option value="off">Not selected only</option></select></div>';
+    h += '<div class="pick-btns"><button type="button" class="btn small alt" data-pk="all">Select all shown</button><button type="button" class="btn small alt" data-pk="none">Clear all shown</button></div></div>' +
+      '<p class="pick-count" id="pk-n" role="status" aria-live="polite"></p><div class="pick-list" id="pk-l" role="group" aria-label="' + esc(opts.label || 'Accounts') + '">' +
+      items.map(function (it, i) {
+        return '<label class="pick-row' + (it.locked ? ' locked' : '') + '" data-i="' + i + '"><input type="checkbox"' + (it.checked ? ' checked' : '') + (it.locked ? ' disabled' : '') + '>' +
+          '<span class="pick-code">' + esc(it.code || '') + '</span><span class="pick-name">' + esc(it.title) + (it.note ? ' <span class="pick-note">' + esc(it.note) + '</span>' : '') + '</span>' +
+          '<span class="pick-amt">' + (it.amount == null ? '' : peso(it.amount)) + '</span></label>';
+      }).join('') + '<p class="muted pick-none" id="pk-0" hidden>Nothing matches what you typed.</p></div></div>';
+    host.innerHTML = h;
+    var rows = Array.prototype.slice.call(host.querySelectorAll('.pick-row'));
+    var boxes = rows.map(function (r) { return r.querySelector('input'); });
+    var hay = items.map(function (it) { return ((it.code || '') + ' ' + it.title).toLowerCase(); });
+    function sel() { var out = []; items.forEach(function (it, i) { if (boxes[i].checked) out.push(it); }); return out; }
+    function refresh() {
+      var words = $('#pk-q', host).value.toLowerCase().split(/\s+/).filter(Boolean);
+      var mode = opts.filter ? $('#pk-f', host).value : 'all';
+      var any = false;
+      rows.forEach(function (r, i) {
+        var ok = words.every(function (w) { return hay[i].indexOf(w) !== -1; }) && (mode === 'all' || (mode === 'on' ? boxes[i].checked : !boxes[i].checked));
+        r.hidden = !ok; if (ok) any = true;
+      });
+      $('#pk-0', host).hidden = any;
+      var chosen = sel();
+      $('#pk-n', host).textContent = chosen.length + ' of ' + items.length + ' selected';
+      if (opts.onChange) opts.onChange(chosen);
+    }
+    host.addEventListener('change', function (e) { if (e.target.type === 'checkbox') refresh(); });
+    $('#pk-q', host).addEventListener('input', refresh);
+    $('#pk-q', host).addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); }); // Enter must not submit the void form
+    if (opts.filter) $('#pk-f', host).addEventListener('change', refresh);
+    host.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('[data-pk]') : null; if (!b) return;
+      var on = b.getAttribute('data-pk') === 'all';
+      boxes.forEach(function (bx, i) { if (!rows[i].hidden && !items[i].locked) bx.checked = on; });
+      refresh();
+    });
+    refresh();
+    return { selected: sel };
+  }
+
+  // ---------- admin: which accounts are the CNA fund sources
+  function viewSources() {
+    shell('sources', '<h1 class="page-title">Fund sources</h1><p class="page-lead">Choose which accounts in the e-budget report count as CNA fund sources. The list below is every account in the latest uploaded report. Tick as many as you need.</p><div id="fs"><p class="muted">Loading</p></div>');
+    api('/api/fund-sources').then(function (d) {
+      if (d.empty) { $('#fs').innerHTML = '<div class="pane empty"><h2>No report yet</h2><p>Upload the e-budget report first. Its accounts will then appear here.</p><p><a class="btn" href="#/data">Upload and figures</a></p></div>'; return; }
+      var items = d.accounts.map(function (a) {
+        return { code: a.code, title: a.account, note: a.voided ? '(voided)' : '', amount: a.overall, checked: a.selected, locked: a.voided, name: a.account };
+      });
+      d.missing.forEach(function (n) { items.unshift({ code: '', title: n, note: '(not in this report)', amount: null, checked: true, name: n }); });
+      $('#fs').innerHTML =
+        (d.legacy ? '<div class="pane"><p class="msg warn">This report was uploaded before fund source selection was added, so only its ' + items.length + ' fund sources are listed. Upload the e-budget report again to choose from every account in it.</p></div>' : '') +
+        '<div class="pane"><h2>Choose the fund sources</h2><p class="muted">Report as of ' + esc(R.longDate(d.reportAsOf)) + ' (' + esc(d.filename) + '). Voided fund sources stay ticked; remove the void first if you want to take one off the list.</p><div id="serr"></div>' +
+        '<div id="spick"></div><p class="sel-total" id="stot"></p><button class="btn" type="button" id="ssave">Save fund sources</button></div>';
+      var initial = {}; items.forEach(function (it) { if (it.checked) initial[it.name] = true; });
+      var list = pickList($('#spick'), items, {
+        filter: true, label: 'Accounts in the report',
+        onChange: function (sel) {
+          var t = 0; sel.forEach(function (it) { t += Math.round((it.amount || 0) * 100); });
+          $('#stot').innerHTML = 'Selected: <strong>' + sel.length + '</strong> fund source' + (sel.length === 1 ? '' : 's') + ', overall balance in all offices <strong>' + peso(t / 100) + '</strong> before voids.';
+        }
+      });
+      $('#ssave').onclick = function () {
+        var chosen = list.selected().map(function (it) { return it.name; });
+        var now = {}; chosen.forEach(function (n) { now[n] = true; });
+        var add = chosen.filter(function (n) { return !initial[n]; }).length;
+        var rem = Object.keys(initial).filter(function (n) { return !now[n]; }).length;
+        if (!chosen.length) { $('#serr').innerHTML = msg('err', 'Choose at least one fund source.'); return; }
+        if (!add && !rem) { $('#serr').innerHTML = ''; toast('No changes to save.'); return; }
+        askDialog({ title: 'Save these fund sources?', text: chosen.length + ' fund sources will be counted (' + add + ' added, ' + rem + ' removed). The dashboard and every report change right away, and the change is recorded in the history.', ok: 'Save' }).then(function (ok) {
+          if (!ok) return;
+          api('/api/fund-sources', { method: 'PUT', json: { accounts: chosen } })
+            .then(function () { toast('Fund sources saved.'); viewSources(); })
+            .catch(function (er) { $('#serr').innerHTML = msg('err', errText(er)); });
+        });
+      };
+    }).catch(function (e) { if (e.message !== 'signed-out') $('#fs').innerHTML = msg('err', errText(e)); });
+  }
+
   // ---------- admin: voided funds
   function viewVoids() {
-    shell('voids', '<h1 class="page-title">Voided funds</h1><p class="page-lead">When a fund source is voided, it is voided in every office. Its balances leave the available fund and are shown in red as a deduction, with the office and the reason you state here.</p><div id="vd"><p class="muted">Loading</p></div>');
+    shell('voids', '<h1 class="page-title">Voided funds</h1><p class="page-lead">When a fund source is voided, it is voided in every office. Its balances leave the available fund and are shown in red as a deduction, with the office and the reason you state here. You can void several fund sources at once.</p><div id="vd"><p class="muted">Loading</p></div>');
     Promise.all([api('/api/options'), api('/api/report')]).then(function (res) {
       var o = res[0], rep = res[1];
-      if (!o.accounts.length) { $('#vd').innerHTML = '<div class="pane empty"><h2>No report yet</h2><p>Upload the e-budget report before voiding fund sources.</p><p><a class="btn" href="#/data">Upload and figures</a></p></div>'; return; }
+      if (!o.accounts.length) { $('#vd').innerHTML = '<div class="pane empty"><h2>No fund sources yet</h2><p>Upload the e-budget report and choose the fund sources before voiding any.</p><p><a class="btn" href="#/data">Upload and figures</a> <a class="btn alt" href="#/sources">Fund sources</a></p></div>'; return; }
       var m = rep.model;
       var voided = {}; m.voids.forEach(function (v) { voided[v.account] = true; });
       var bal = {}; m.accounts.forEach(function (a) { bal[a.account] = a.gross.overall; });
+      var open = o.accounts.filter(function (a) { return !voided[a.account]; });
       $('#vd').innerHTML =
-        '<div class="pane"><h2>Void a fund source</h2><p class="muted">The amount voided is the balance of the fund source in all offices, taken from the latest e-budget report.</p><div id="verr"></div><form id="vf">' +
-        '<div class="field"><label for="va">Fund source</label><select id="va" required><option value="">Choose a fund source</option>' + o.accounts.filter(function (a) { return !voided[a.account]; }).map(function (a) { return '<option value="' + esc(a.account) + '">' + esc(a.account) + '</option>'; }).join('') + '</select><span class="hint" id="vbal">&nbsp;</span></div>' +
+        '<div class="pane"><h2>Void fund sources</h2><p class="muted">Tick the fund sources to void. The amount voided is the balance of each one in all offices, taken from the latest e-budget report. Only the fund sources you selected on the <a href="#/sources">Fund sources</a> page are listed.</p><div id="verr"></div>' +
+        (open.length ? '<form id="vf"><div id="vpick"></div><p class="sel-total" id="vtot"></p>' +
         '<div class="row"><div class="field"><label for="vo">Office</label><input id="vo" maxlength="200" required autocomplete="off"><span class="hint">The office that caused the void. Type it as it should appear in the report.</span></div>' +
         '<div class="field"><label for="vdte">Date voided</label><input id="vdte" type="date" value="' + new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }) + '" required></div></div>' +
-        '<div class="field"><label for="vr">Reason</label><textarea id="vr" maxlength="500" required></textarea><span class="hint">This is printed in the report.</span></div>' +
-        '<button class="btn danger" type="submit">Void fund source</button></form></div>' +
-        '<div class="pane"><h2>Currently voided</h2>' + (m.voids.length ? '<div class="tbl-scroll"><table class="tbl"><thead><tr><th>Fund source</th><th class="r">Amount voided (all offices)</th><th>Office</th><th>Reason</th><th>Date</th><th></th></tr></thead><tbody>' +
-          m.voids.map(function (v) { return '<tr><td>' + esc(v.account) + '</td><td class="r void">' + peso(v.overall) + '</td><td>' + esc(v.officeRemark) + '</td><td>' + esc(v.reason) + '</td><td>' + esc(R.longDate(v.dateVoided)) + '</td><td class="r"><button type="button" class="btn small alt" data-rm="' + esc(v.id) + '">Remove void</button></td></tr>'; }).join('') +
-          '</tbody><tfoot><tr><th class="r">Total voided</th><th class="r void">' + peso(m.voidTotals.overall) + '</th><th colspan="4"></th></tr></tfoot></table></div>' : '<p class="muted">No fund sources have been voided.</p>') + '</div>';
-      $('#va').onchange = function () { $('#vbal').innerHTML = this.value ? 'Balance in all offices: <strong>' + peso(bal[this.value] || 0) + '</strong> (appropriation plus allotment balance)' : '&nbsp;'; };
-      $('#vf').onsubmit = function (e) {
-        e.preventDefault();
-        askDialog({ title: 'Void this fund source?', text: 'You are about to void ' + $('#va').value + ' in all offices, which deducts ' + peso(bal[$('#va').value] || 0) + ' from the available fund. This is recorded in the history.', ok: 'Void', danger: true }).then(function (ok) {
-          if (!ok) return;
-          api('/api/voids', { method: 'POST', json: { account: $('#va').value, officeRemark: $('#vo').value, reason: $('#vr').value, dateVoided: $('#vdte').value } })
-            .then(function () { toast('Fund source voided.'); viewVoids(); }).catch(function (er) { $('#verr').innerHTML = msg('err', errText(er)); });
+        '<div class="field"><label for="vr">Reason</label><textarea id="vr" maxlength="500" required></textarea><span class="hint">This is printed in the report. It applies to every fund source ticked above.</span></div>' +
+        '<button class="btn danger" type="submit" id="vgo" disabled>Void fund sources</button></form>' : '<p class="muted">Every selected fund source is already voided.</p>') + '</div>' +
+        '<div class="pane"><h2>Currently voided</h2>' + (m.voids.length ? '<div id="rerr"></div><p><button type="button" class="btn small alt" id="rmsel" disabled>Remove selected voids</button></p><div class="tbl-scroll"><table class="tbl"><thead><tr><th><input type="checkbox" id="rmall" aria-label="Select all voided fund sources"></th><th>Fund source</th><th class="r">Amount voided (all offices)</th><th>Office</th><th>Reason</th><th>Date</th><th></th></tr></thead><tbody>' +
+          m.voids.map(function (v) { return '<tr><td><input type="checkbox" class="rmc" value="' + esc(v.id) + '" aria-label="Select ' + esc(v.account) + '"></td><td>' + esc(v.account) + '</td><td class="r void">' + peso(v.overall) + '</td><td>' + esc(v.officeRemark) + '</td><td>' + esc(v.reason) + '</td><td>' + esc(R.longDate(v.dateVoided)) + '</td><td class="r"><button type="button" class="btn small alt" data-rm="' + esc(v.id) + '">Remove void</button></td></tr>'; }).join('') +
+          '</tbody><tfoot><tr><th></th><th class="r">Total voided</th><th class="r void">' + peso(m.voidTotals.overall) + '</th><th colspan="4"></th></tr></tfoot></table></div>' : '<p class="muted">No fund sources have been voided.</p>') + '</div>';
+
+      var chosen = [];
+      if (open.length) {
+        var list = pickList($('#vpick'), open.map(function (a) { return { code: a.code, title: a.account, amount: bal[a.account] || 0, name: a.account }; }), {
+          label: 'Fund sources to void',
+          onChange: function (sel) {
+            chosen = sel;
+            var t = 0; sel.forEach(function (it) { t += Math.round((it.amount || 0) * 100); });
+            $('#vtot').innerHTML = sel.length ? 'To void: <strong>' + sel.length + '</strong> fund source' + (sel.length === 1 ? '' : 's') + ', <strong>' + peso(t / 100) + '</strong> in all offices.' : 'Tick one or more fund sources to void.';
+            $('#vgo').disabled = !sel.length;
+            $('#vgo').textContent = sel.length > 1 ? 'Void ' + sel.length + ' fund sources' : 'Void fund source';
+          }
+        });
+        $('#vf').onsubmit = function (e) {
+          e.preventDefault();
+          var names = list.selected().map(function (it) { return it.name; });
+          if (!names.length) { $('#verr').innerHTML = msg('err', 'Tick at least one fund source to void.'); return; }
+          var t = 0; list.selected().forEach(function (it) { t += Math.round((it.amount || 0) * 100); });
+          askDialog({ title: names.length > 1 ? 'Void these ' + names.length + ' fund sources?' : 'Void this fund source?', text: 'You are about to void ' + (names.length > 1 ? names.length + ' fund sources' : names[0]) + ' in all offices, which deducts ' + peso(t / 100) + ' from the available fund. This is recorded in the history.', ok: 'Void', danger: true }).then(function (ok) {
+            if (!ok) return;
+            api('/api/voids', { method: 'POST', json: { accounts: names, officeRemark: $('#vo').value, reason: $('#vr').value, dateVoided: $('#vdte').value } })
+              .then(function (d) { toast(d.count > 1 ? d.count + ' fund sources voided.' : 'Fund source voided.'); viewVoids(); }).catch(function (er) { $('#verr').innerHTML = msg('err', errText(er)); });
+          });
+        };
+      }
+      function checks() { return Array.prototype.slice.call(document.querySelectorAll('.rmc')); }
+      function syncRm() {
+        var n = checks().filter(function (c) { return c.checked; }).length;
+        if ($('#rmsel')) { $('#rmsel').disabled = !n; $('#rmsel').textContent = n > 1 ? 'Remove ' + n + ' selected voids' : 'Remove selected void'; }
+        if ($('#rmall')) $('#rmall').checked = n > 0 && n === checks().length;
+      }
+      if ($('#rmall')) $('#rmall').onchange = function () { var on = this.checked; checks().forEach(function (c) { c.checked = on; }); syncRm(); };
+      checks().forEach(function (c) { c.onchange = syncRm; });
+      if ($('#rmsel')) $('#rmsel').onclick = function () {
+        var ids = checks().filter(function (c) { return c.checked; }).map(function (c) { return c.value; });
+        if (!ids.length) return;
+        askDialog({ title: 'Remove ' + (ids.length > 1 ? ids.length + ' voids' : 'this void') + '?', text: 'The balances return to the available fund in every office. Give the reason so the history shows why.', field: 'Reason for removing the void', required: 'State why the void is being removed.', ok: 'Remove', danger: true }).then(function (reason) {
+          if (!reason) return;
+          api('/api/voids/remove', { method: 'POST', json: { ids: ids, reason: reason } }).then(function (d) { toast(d.count > 1 ? d.count + ' voids removed.' : 'Void removed.'); viewVoids(); }).catch(function (er) { $('#rerr').innerHTML = msg('err', errText(er)); });
         });
       };
       Array.prototype.forEach.call(document.querySelectorAll('[data-rm]'), function (b) {
@@ -334,11 +451,12 @@
     if (!me) return showLogin();
     var name = ((location.hash || '#/dashboard').replace(/^#\/?/, '').split('?')[0].split('/')[0]) || 'dashboard';
     if (me.mustChange) return viewPassword(true);
-    var adminOnly = { data: 1, voids: 1, users: 1 };
+    var adminOnly = { data: 1, sources: 1, voids: 1, users: 1 };
     if (adminOnly[name] && me.role !== 'admin') { location.hash = '#/dashboard'; return; }
     window.scrollTo(0, 0);
     if (name === 'history') return viewHistory();
     if (name === 'data') return viewData();
+    if (name === 'sources') return viewSources();
     if (name === 'voids') return viewVoids();
     if (name === 'users') return viewUsers();
     if (name === 'password') return viewPassword(false);

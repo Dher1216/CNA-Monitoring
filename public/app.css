@@ -349,3 +349,27 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .combo-list li[aria-selected="true"] { font-weight: 600; }
 .combo-list li.none { color: #6b6480; cursor: default; font-style: italic; }
 .combo-list li.none:hover { background: transparent; }
+
+/* searchable checklist: choose fund sources, choose fund sources to void */
+.pick-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 8px; }
+.pick-bar .field { margin: 0; }
+.pick-search { flex: 1 1 260px; max-width: 420px; }
+.pick-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.pick-count { margin: 6px 0; font-weight: 600; color: var(--v800, #3a1f6e); }
+.pick-list { max-height: 420px; overflow-y: auto; border: 1px solid var(--v300); border-radius: 3px; background: #fff; }
+.pick-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 12px; border-bottom: 1px solid var(--v100); cursor: pointer; line-height: 1.35; }
+.pick-row[hidden] { display: none; }
+.pick-row:last-of-type { border-bottom: 0; }
+.pick-row:hover { background: var(--v50); }
+.pick-row.locked { cursor: default; background: #faf8fd; color: #6b6480; }
+.pick-row input { margin-top: 3px; flex: none; width: 18px; height: 18px; }
+.pick-code { flex: none; width: 92px; color: #6b6480; font-variant-numeric: tabular-nums; font-size: .88rem; padding-top: 1px; }
+.pick-name { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.pick-note { color: #8a2b2b; font-size: .85rem; }
+.pick-amt { flex: none; text-align: right; font-variant-numeric: tabular-nums; min-width: 120px; }
+.pick-none { padding: 12px; margin: 0; }
+.sel-total { margin: 12px 0; }
+@media (max-width: 640px) {
+  .pick-code { display: none; }
+  .pick-amt { min-width: 96px; font-size: .9rem; }
+}
