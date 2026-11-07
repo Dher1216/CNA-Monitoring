@@ -65,7 +65,7 @@
   function verdict(c, required) {
     var short = !c.ok;
     return '<div class="verdict ' + (short ? 'is-short' : 'is-ok') + '"><span class="badge ' + (short ? 'badge-short' : 'badge-ok') + '">' + (short ? 'Not enough' : 'Enough') + '</span>' +
-      '<span>Needs ' + peso(required) + (short ? ', short by ' : ', surplus ') + peso(Math.abs(c.difference)) + '</span></div>';
+      '<span>Needs ' + peso(required) + (short ? ', deficit of ' : ', excess of ') + peso(Math.abs(c.difference)) + '</span></div>';
   }
   function coverRow(lbl, c, required) {
     var max = Math.max(c.available, required, 1);
@@ -81,7 +81,7 @@
       '<dl class="cover-nums">' +
       '<div><dt>Available</dt><dd>' + peso(c.available) + '</dd></div>' +
       '<div><dt>Required</dt><dd>' + peso(required) + '</dd></div>' +
-      '<div class="' + (short ? 'void' : 'good') + '"><dt>' + (short ? 'Shortfall' : 'Surplus') + '</dt><dd>' + peso(Math.abs(c.difference)) + '</dd></div>' +
+      '<div class="' + (short ? 'void' : 'good') + '"><dt>' + (short ? 'Deficit' : 'Excess') + '</dt><dd>' + peso(Math.abs(c.difference)) + '</dd></div>' +
       '<div><dt>Coverage</dt><dd>' + (c.percent == null ? '–' : fmt(c.percent) + '%') + '</dd></div>' +
       '</dl></div>';
   }
@@ -121,13 +121,20 @@
   function ncols(basis) { return basis === 'approp' ? 2 : 4; }
   function amount(basis, o) { return basis === 'approp' ? o.approp : o.overall; }
 
-  function netBox(title, gross, voided, net, basis) {
+  // cover = rq.optionA / rq.optionB for the basis shown; given only for the whole-province boxes
+  function netBox(title, gross, voided, net, basis, cover, required) {
     var g = amount(basis, gross), v = amount(basis, voided), n = amount(basis, net);
+    var extra = '';
+    if (cover) {
+      var short = !cover.ok;
+      extra = '<div class="fund-need"><dt>Less: amount to be funded</dt><dd>(' + peso(required) + ')</dd></div>' +
+        '<div class="excess ' + (short ? 'is-short' : 'is-ok') + '"><dt>' + (short ? 'Deficit' : 'Excess') + '<small>net available fund ' + (short ? 'below' : 'above') + ' the amount to be funded</small></dt><dd>' + (short ? '(' + peso(Math.abs(cover.difference)) + ')' : peso(cover.difference)) + '</dd></div>';
+    }
     return '<section class="block" id="net"><h2>' + esc(title) + '</h2><div class="netbox"><dl>' +
       '<div><dt>Total before voided fund sources</dt><dd>' + peso(g) + '</dd></div>' +
       '<div class="void"><dt>Less: voided fund sources</dt><dd>' + (v ? '(' + peso(v) + ')' : peso(0)) + '</dd></div>' +
       (basis === 'overall' ? '<div><dt>Net appropriation balance</dt><dd>' + peso(net.approp) + '</dd></div><div class="emph"><dt>Net allotment balance</dt><dd>' + peso(net.allot) + '</dd></div>' : '') +
-      '<div class="net"><dt>Net available fund for CNA</dt><dd>' + peso(n) + '</dd></div></dl></div></section>';
+      '<div class="net"><dt>Net available fund for CNA</dt><dd>' + peso(n) + '</dd></div>' + extra + '</dl></div></section>';
   }
 
   // ---------- voided tables
@@ -188,7 +195,7 @@
       ? '<p class="muted">Each voided fund source is excluded in every office. The amounts are deducted below.</p>' + voidedFundTable(basis, m.voids, m.voidTotals, true)
       : '<p class="muted">No fund sources have been voided.</p>') + '</section>';
     // 3. Net available
-    html += netBox('Net available fund for CNA', t.gross, t.voided, t.net, basis);
+    html += netBox('Net available fund for CNA', t.gross, t.voided, t.net, basis, basis === 'approp' ? m.requirement.optionA : m.requirement.optionB, m.requirement.required);
     // 4. Funding requirement
     html += requirementBlock(m, basis);
     return html + footer(m) + '</article>';
@@ -239,7 +246,7 @@
     html += '<p class="muted">Fund sources with no balance in an office are not listed under that office.</p>';
     m.offices.forEach(function (o) { html += officeBlock(m, o, basis); });
     var t = m.totals;
-    html += netBox('All offices: net available fund for CNA', t.gross, t.voided, t.net, basis);
+    html += netBox('All offices: net available fund for CNA', t.gross, t.voided, t.net, basis, basis === 'approp' ? m.requirement.optionA : m.requirement.optionB, m.requirement.required);
     html += '<section class="block block-void" id="voided"><h2>Voided fund sources</h2>' + (m.voids.length
       ? '<p class="muted">Each voided fund source is excluded in every office.</p>' + voidedFundTable(basis, m.voids, m.voidTotals, true)
       : '<p class="muted">No fund sources have been voided.</p>') + '</section>';
@@ -257,11 +264,16 @@
     });
     body += '</tbody>';
     var foot = '<tfoot><tr class="foot-net"><th scope="row">Net available fund</th><td>' + peso(t.net.approp) + '</td><td class="emph-cell">' + peso(t.net.allot) + '</td><td class="grand-cell">' + peso(t.net.overall) + '</td><td class="void">' + (t.voided.overall ? '(' + peso(t.voided.overall) + ')' : '<span class="nil">–</span>') + '</td></tr>' +
+      '<tr class="foot-need"><th scope="row">Less: amount to be funded</th><td>(' + peso(m.requirement.required) + ')</td><td></td><td>(' + peso(m.requirement.required) + ')</td><td></td></tr>' +
+      '<tr class="foot-excess"><th scope="row">Excess / (Deficit)</th>' + excessCell(m.requirement.optionA) + '<td></td>' + excessCell(m.requirement.optionB) + '<td></td></tr>' +
       '<tr class="foot-gross"><th scope="row">Total per e-budget, before voided</th><td>' + peso(t.gross.approp) + '</td><td>' + peso(t.gross.allot) + '</td><td>' + peso(t.gross.overall) + '</td><td></td></tr></tfoot>';
     var h = '<thead><tr><th scope="col">Fund source</th><th scope="col" class="num">Appropriation balance<small>20% retention</small></th><th scope="col" class="num emph-head">Allotment balance</th><th scope="col" class="num">Overall available<small>appropriation + allotment</small></th><th scope="col" class="num void-head">Voided<small>deducted</small></th></tr></thead>';
     return '<article class="sheet" id="report">' + header(m, opts, 'Per fund source report') +
       '<section class="block" id="sources"><h2>Available fund per fund source</h2><p class="muted">Whole province, net of voided fund sources.</p>' +
       '<div class="tbl-scroll"><table class="tbl tbl-accounts">' + h + body + foot + '</table></div></section>' + footer(m) + '</article>';
+  }
+  function excessCell(c) {
+    return '<td class="' + (c.ok ? 'good' : 'void') + '"><strong>' + (c.ok ? peso(c.difference) : '(' + peso(Math.abs(c.difference)) + ')') + '</strong><small>' + (c.ok ? 'excess' : 'deficit') + '</small></td>';
   }
   function voidedReport(m, opts) {
     var html = '<article class="sheet" id="report">' + header(m, opts, 'Voided funds report');

@@ -373,3 +373,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .pick-code { display: none; }
   .pick-amt { min-width: 96px; font-size: .9rem; }
 }
+
+/* excess / deficit under the net available fund */
+.netbox dl > div.fund-need { color: #3d3557; }
+.netbox dl > div.excess { border-bottom: 0; border-top: 2px solid var(--v700); margin-top: 4px; padding-top: 10px; font-weight: 700; font-size: 1.1rem; align-items: baseline; }
+.netbox dl > div.excess dt small { display: block; font-weight: 400; font-size: .78rem; color: #6b6480; }
+.netbox dl > div.excess.is-ok dd { color: var(--green); }
+.netbox dl > div.excess.is-short dd { color: var(--red); }
+.tbl .foot-need th, .tbl .foot-need td { color: #3d3557; }
+.tbl .foot-excess th, .tbl .foot-excess td { border-top: 2px solid var(--v700); }
+.tbl .foot-excess td small { display: block; font-weight: 400; font-size: .75rem; color: #6b6480; }
