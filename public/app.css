@@ -383,3 +383,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tbl .foot-need th, .tbl .foot-need td { color: #3d3557; }
 .tbl .foot-excess th, .tbl .foot-excess td { border-top: 2px solid var(--v700); }
 .tbl .foot-excess td small { display: block; font-weight: 400; font-size: .75rem; color: #6b6480; }
+
+/* excess or deficit table in the per fund source report */
+.tbl-excess th small { display: block; font-weight: 400; font-size: .78rem; color: var(--muted); }
+.tbl-excess td, .tbl-excess thead th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tbl-excess td:last-child { text-align: left; }
+.tbl-excess td.good strong { color: var(--green); }

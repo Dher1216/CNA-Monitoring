@@ -257,7 +257,21 @@
     var h = '<thead><tr><th scope="col">Fund source</th><th scope="col" class="num">Appropriation balance<small>20% retention</small></th><th scope="col" class="num emph-head">Allotment balance</th><th scope="col" class="num">Overall available<small>appropriation + allotment</small></th><th scope="col" class="num void-head">Voided<small>deducted</small></th></tr></thead>';
     return '<article class="sheet" id="report">' + header(m, opts, 'Per fund source report') +
       '<section class="block" id="sources"><h2>Available fund per fund source</h2><p class="muted">Whole province, net of voided fund sources.</p>' +
-      '<div class="tbl-scroll"><table class="tbl tbl-accounts">' + h + body + foot + '</table></div></section>' + footer(m) + '</article>';
+      '<div class="tbl-scroll"><table class="tbl tbl-accounts">' + h + body + foot + '</table></div></section>' + excessTable(m) + footer(m) + '</article>';
+  }
+  // Excess or deficit, worked out for both bases: the 20% appropriation balance and the overall available balance.
+  function excessTable(m) {
+    var rq = m.requirement;
+    function row(lbl, c) {
+      var short = !c.ok;
+      return '<tr><th scope="row">' + lbl + '</th><td>' + peso(c.available) + '</td><td>(' + peso(rq.required) + ')</td>' +
+        '<td class="' + (short ? 'void' : 'good') + '"><strong>' + (short ? '(' + peso(Math.abs(c.difference)) + ')' : peso(c.difference)) + '</strong></td>' +
+        '<td><span class="badge ' + (short ? 'badge-short' : 'badge-ok') + '">' + (short ? 'Deficit' : 'Excess') + '</span></td></tr>';
+    }
+    return '<section class="block" id="excess"><h2>Excess or deficit</h2><p class="muted">The net available fund compared with the amount to be funded: ' +
+      esc(Number(rq.employees).toLocaleString('en-PH')) + ' employees × ' + peso(rq.amountPerEmployee) + ' = ' + peso(rq.required) + '.</p>' +
+      '<div class="tbl-scroll"><table class="tbl tbl-excess"><thead><tr><th scope="col">Based on</th><th scope="col" class="num">Net available fund</th><th scope="col" class="num">Amount to be funded</th><th scope="col" class="num">Excess / (Deficit)</th><th scope="col">Result</th></tr></thead><tbody>' +
+      row('Appropriation balance<small>20% retention</small>', rq.optionA) + row('Overall available balance<small>appropriation + allotment</small>', rq.optionB) + '</tbody></table></div></section>';
   }
   function excessCell(c) {
     return '<td class="' + (c.ok ? 'good' : 'void') + '"><strong>' + (c.ok ? peso(c.difference) : '(' + peso(Math.abs(c.difference)) + ')') + '</strong><small>' + (c.ok ? 'excess' : 'deficit') + '</small></td>';
