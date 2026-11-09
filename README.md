@@ -107,9 +107,40 @@ In this mode the app does not use the saved-copy folder, the backup folder or `s
 
 1. Sign in as `admin`, open **Upload and figures**.
 2. Drop in the e-budget report **exactly as the system exports it** (`.xls` or `.xlsx`). No editing is needed.
-3. The app reads the report date from the "As of" line, keeps only the CNA fund sources, and works out every total from the account lines. It also compares them with the report's Grand Total when that cell is filled in (some exports leave the Sub Total and Grand Total cells at zero; the app then says it could not compare, and the figures are still correct).
+3. The app reads the report date from the "As of" line, reads every account in it, counts the fund sources you selected, and works out every total from the account lines. It also compares them with the report's Grand Total when that cell is filled in (some exports leave the Sub Total and Grand Total cells at zero; the app then says it could not compare, and the figures are still correct).
 
-The list of CNA fund sources (33 accounts) comes with the app and is remembered from one upload to the next. To change the list, upload a workbook that also has a sheet named **CNA Fund Source** with one account name per row; that list then replaces the old one. Accounts in the report that are not on the list are ignored, and if a name on the list is not found in the report, the upload page says so.
+### Choosing the fund sources
+
+The upload keeps **every account** in the e-budget report. Open **Fund sources** (administrator only) to see them all, with their balances, and tick the ones that count as CNA fund sources. You can search by name or code, use **Select all shown** and **Clear all shown**, and save; the dashboard and every report change right away and the change is recorded in the history.
+
+- The selection is remembered from one upload to the next. The very first upload starts from the 33-account list that comes with the app.
+- If the uploaded workbook has a sheet named **CNA Fund Source** (one account name per row), the accounts on that sheet become the selection for that upload. You can still change them on the **Fund sources** page afterwards.
+- A selected account that is missing from a new report is kept and the upload page warns about it.
+- Voided fund sources stay selected. To take one off the list, remove its void first.
+- Reports uploaded before this feature only contain their 33 fund sources. Upload the e-budget report once more to choose from every account.
+
+### Voiding several fund sources at once
+
+On **Voided funds**, search and tick as many fund sources as you need, enter the office, date and reason once, and void them in one step. They are recorded as one entry in the history. To remove voids, tick several in the **Currently voided** table and remove them together with one reason.
+
+### PGSO balances (fuel and oil and similar accounts)
+
+The e-budget report is the budget office's **actual** balance, and it is never changed. When PGSO still has transactions that were not yet transferred to the budget office, the administrator can enter the balance PGSO holds. Open **PGSO balances** (administrator only):
+
+1. Choose the fund source (for example Fuel, Oil and Lubricants) and the date the PGSO figures are as of.
+2. For each office, type the balance PGSO holds. The **allotment balance** is the one affected by transactions not yet transferred; fill the appropriation balance only if PGSO's figure differs. An empty box means "same as the budget office".
+3. Save. The change is recorded in the history.
+
+The reports then show the adjusted amount as a **line item right after the net available fund**, not as a separate report:
+
+- **Per office report** (one office or all offices): under each office's "Net available fund of ..." line, a line "Net available fund of ..., adjusted for PGSO" with the amounts, and the difference per PGSO in small print.
+- **Per fund source report**: under "Net available fund", a line "Net available fund, adjusted for PGSO", then the excess or deficit per the budget office and the excess or deficit adjusted for PGSO, for both the 20% appropriation balance and the overall available balance.
+- **Summary report**: in the net available fund box, the difference per PGSO, the net available fund adjusted for PGSO, and the excess or deficit both ways.
+- The dashboard shows a short summary of the same, and the Excel downloads and the offline copy match the reports.
+
+- The budget office figures and the original excess or deficit stay exactly as they were.
+- The PGSO balances are kept when a new e-budget report is uploaded. A warning appears if the PGSO date is older than the report, so update them after each upload.
+- A PGSO balance for a voided or unselected fund source has no effect.
 
 ## When the server is off
 

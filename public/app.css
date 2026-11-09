@@ -406,3 +406,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .amt-in { width: 100%; min-width: 130px; padding: 7px 8px; border: 1px solid var(--v300); border-radius: 3px; background: #fff; font: inherit; text-align: right; }
 .amt-in:focus { outline: 3px solid var(--v300); border-color: var(--v600); }
 .tbl-pgso-edit .good { color: var(--green); }
+
+/* PGSO-adjusted line right after the net available fund */
+.tbl tfoot th small { display: block; font-weight: 400; font-size: .78rem; color: var(--muted); }
+.tbl .foot-adj th, .tbl .foot-adj td { background: #f3fbf6; border-top: 1px dashed var(--v300); font-weight: 600; }
+.netbox dl > div.net-adj { border-top: 1px dashed var(--v300); }
+.netbox dl > div dt small { display: block; font-weight: 400; font-size: .78rem; color: #6b6480; }
+.netbox dl > div.excess-adj { border-top: 1px dashed var(--v300); margin-top: 0; }
