@@ -72,7 +72,7 @@
   // ---------- shell
   function shell(active, inner) {
     var links = [['dashboard', 'Dashboard'], ['reports', 'Reports'], ['history', 'History']];
-    if (me.role === 'admin') links.push(['data', 'Upload and figures'], ['sources', 'Fund sources'], ['voids', 'Voided funds'], ['users', 'People']);
+    if (me.role === 'admin') links.push(['data', 'Upload and figures'], ['sources', 'Fund sources'], ['pgso', 'PGSO balances'], ['voids', 'Voided funds'], ['users', 'People']);
     app.innerHTML = '<header class="topbar no-print"><div class="topbar-in">' +
       '<a class="brand" href="#/dashboard"><img src="/seal.png" alt=""><span><b>CNA Fund Monitor</b><span>Province of Antique, Provincial Budget Office</span></span></a>' +
       '<nav class="nav" aria-label="Main">' + links.map(function (l) { return '<a href="#/' + l[0] + '"' + (l[0] === active ? ' aria-current="page"' : '') + '>' + l[1] + '</a>'; }).join('') + '</nav>' +
@@ -341,6 +341,114 @@
     }).catch(function (e) { if (e.message !== 'signed-out') $('#fs').innerHTML = msg('err', errText(e)); });
   }
 
+  // ---------- admin: balances held by PGSO
+  function viewPgso() {
+    shell('pgso', '<h1 class="page-title">PGSO balances</h1><p class="page-lead">The e-budget report is the budget office\'s actual balance and is never changed here. When PGSO still has transactions that were not yet transferred to the budget office (fuel and oil, for example), enter the balance PGSO holds for each office. The reports then show the budget office balance, the PGSO balance and the difference side by side, and the net available fund adjusted for PGSO.</p><div id="pg"><p class="muted">Loading</p></div>');
+    api('/api/pgso').then(function (d) {
+      if (d.empty) { $('#pg').innerHTML = '<div class="pane empty"><h2>No report yet</h2><p>Upload the e-budget report first.</p><p><a class="btn" href="#/data">Upload and figures</a></p></div>'; return; }
+      var accts = d.accounts.filter(function (a) { return !a.voided; });
+      if (!accts.length) { $('#pg').innerHTML = '<div class="pane empty"><h2>No fund sources to adjust</h2><p>Select the fund sources first on the <a href="#/sources">Fund sources</a> page.</p></div>'; return; }
+      var today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+      var edits = {};      // "office|account" -> { approp: text, allot: text }
+      function txt(v) { return v === null || v === undefined ? '' : Number(v).toFixed(2); }
+      d.pgso.entries.forEach(function (e) { edits[e.office + '|' + e.account] = { approp: txt(e.approp), allot: txt(e.allot) }; });
+      var byAcct = {}; d.lines.forEach(function (l) { (byAcct[l.account] = byAcct[l.account] || []).push(l); });
+      var current = accts[0].account;
+      accts.forEach(function (a) { if (current === accts[0].account && /fuel/i.test(a.account)) current = a.account; });
+      // Start on a fund source that already has PGSO balances, otherwise on the fuel and oil one.
+      var withData = accts.filter(function (a) { return d.pgso.entries.some(function (e) { return e.account === a.account; }); })[0];
+      if (withData) current = withData.account;
+
+      function num(s) { // null = blank, NaN = not an amount
+        s = String(s == null ? '' : s).replace(/[₱,\s]/g, '');
+        if (s === '') return null;
+        return /^-?\d+(\.\d{1,2})?$/.test(s) ? Number(s) : NaN;
+      }
+      $('#pg').innerHTML =
+        '<div class="pane"><div id="perr"></div><div class="row">' +
+        '<div class="field"><label for="pgacct">Fund source</label><select id="pgacct">' + accts.map(function (a) { return '<option value="' + esc(a.account) + '"' + (a.account === current ? ' selected' : '') + '>' + esc(a.account) + '</option>'; }).join('') + '</select></div>' +
+        '<div class="field"><label for="pgdate">PGSO balances as of</label><input id="pgdate" type="date" value="' + esc(d.pgso.asOf || today) + '"><span class="hint">E-budget report as of ' + esc(R.longDate(d.reportAsOf)) + '.</span></div>' +
+        '<div class="field pick-search"><label for="pgq">Find an office</label><input id="pgq" type="search" autocomplete="off" placeholder="Type part of an office name"></div></div>' +
+        '<p class="muted">For each office, type the balance PGSO holds. Leave a box empty to use the budget office figure. Reports use the <strong>allotment balance</strong> for the transactions PGSO has not transferred yet; fill the appropriation balance only if PGSO\'s figure differs from the budget office.</p>' +
+        '<div class="tbl-scroll"><table class="tbl tbl-pgso-edit"><thead><tr><th scope="col">Office</th><th scope="col" class="num">Budget office<small>Appropriation balance</small></th><th scope="col" class="num">Budget office<small>Allotment balance</small></th>' +
+        '<th scope="col" class="num">PGSO<small>Appropriation balance</small></th><th scope="col" class="num">PGSO<small>Allotment balance</small></th><th scope="col" class="num">Difference<small>overall, PGSO less budget office</small></th></tr></thead><tbody id="pgrows"></tbody><tfoot id="pgfoot"></tfoot></table></div>' +
+        '<p><button type="button" class="btn" id="pgsave">Save PGSO balances</button> <button type="button" class="btn alt" id="pgclear">Clear this fund source</button></p></div>';
+
+      function lines() { return byAcct[$('#pgacct').value] || []; }
+      function diffOf(l, e) {
+        var a = num(e.approp), s = num(e.allot);
+        if (a === null && s === null) return null;
+        if (isNaN(a) || isNaN(s)) return NaN;
+        return Math.round((((a === null ? l.approp : a) + (s === null ? l.allot : s)) - (l.approp + l.allot)) * 100) / 100;
+      }
+      function diffHtml(v) { return v === null ? '<span class="nil">–</span>' : isNaN(v) ? '<span class="void">check amount</span>' : v < 0 ? '<span class="void">(' + peso(Math.abs(v)) + ')</span>' : v > 0 ? '<span class="good">' + peso(v) + '</span>' : peso(0); }
+      function drawRows() {
+        var acct = $('#pgacct').value;
+        $('#pgrows').innerHTML = lines().map(function (l, i) {
+          var e = edits[l.office + '|' + acct] || { approp: '', allot: '' };
+          return '<tr data-i="' + i + '"><th scope="row"><span class="oname">' + esc(l.officeName) + '</span><span class="acode">' + esc(l.office) + '</span></th><td>' + peso(l.approp) + '</td><td>' + peso(l.allot) + '</td>' +
+            '<td><input class="amt-in" data-f="approp" inputmode="decimal" autocomplete="off" aria-label="PGSO appropriation balance, ' + esc(l.officeName) + '" value="' + esc(e.approp) + '"></td>' +
+            '<td><input class="amt-in" data-f="allot" inputmode="decimal" autocomplete="off" aria-label="PGSO allotment balance, ' + esc(l.officeName) + '" value="' + esc(e.allot) + '"></td>' +
+            '<td class="r diff">' + diffHtml(diffOf(l, e)) + '</td></tr>';
+        }).join('') || '<tr><td colspan="6" class="muted">No office has a balance line for this fund source in the report.</td></tr>';
+        filterRows(); totals();
+      }
+      function filterRows() {
+        var words = $('#pgq').value.toLowerCase().split(/\s+/).filter(Boolean);
+        Array.prototype.forEach.call($('#pgrows').querySelectorAll('tr[data-i]'), function (tr) {
+          var l = lines()[+tr.getAttribute('data-i')], h = (l.officeName + ' ' + l.office).toLowerCase();
+          tr.hidden = !words.every(function (w) { return h.indexOf(w) !== -1; });
+        });
+      }
+      function totals() {
+        var acct = $('#pgacct').value, bo = 0, pg = 0, n = 0;
+        lines().forEach(function (l) {
+          var e = edits[l.office + '|' + acct]; if (!e) return;
+          var a = num(e.approp), s = num(e.allot); if ((a === null && s === null) || isNaN(a) || isNaN(s)) return;
+          n++; bo += Math.round((l.approp + l.allot) * 100); pg += Math.round(((a === null ? l.approp : a) + (s === null ? l.allot : s)) * 100);
+        });
+        $('#pgfoot').innerHTML = n ? '<tr class="foot-net"><th scope="row">Offices with a PGSO balance: ' + n + '</th><td colspan="2" class="r">Budget office overall ' + peso(bo / 100) + '</td><td colspan="2" class="r">PGSO overall ' + peso(pg / 100) + '</td><td class="r">' + diffHtml((pg - bo) / 100) + '</td></tr>' : '';
+      }
+      function dateNote() {
+        var old = $('#pgdate').value && d.reportAsOf && $('#pgdate').value < d.reportAsOf;
+        $('#perr').innerHTML = old ? msg('warn', 'These PGSO balances are dated before the e-budget report. Check that they are still correct.') : '';
+      }
+      $('#pgacct').onchange = drawRows;
+      $('#pgq').oninput = filterRows;
+      $('#pgdate').onchange = dateNote;
+      $('#pgrows').addEventListener('input', function (e) {
+        var inp = e.target; if (!inp.getAttribute || !inp.getAttribute('data-f')) return;
+        var tr = inp.closest('tr'), l = lines()[+tr.getAttribute('data-i')], k = l.office + '|' + $('#pgacct').value;
+        var ed = edits[k] || (edits[k] = { approp: '', allot: '' });
+        ed[inp.getAttribute('data-f')] = inp.value;
+        tr.querySelector('.diff').innerHTML = diffHtml(diffOf(l, ed)); totals();
+      });
+      $('#pgclear').onclick = function () {
+        var acct = $('#pgacct').value;
+        askDialog({ title: 'Clear PGSO balances?', text: 'The PGSO balances for ' + acct + ' will be emptied on this page. Nothing changes in the reports until you save.', ok: 'Clear' }).then(function (ok) {
+          if (!ok) return;
+          lines().forEach(function (l) { delete edits[l.office + '|' + acct]; });
+          drawRows();
+        });
+      };
+      $('#pgsave').onclick = function () {
+        var entries = [], bad = null;
+        Object.keys(edits).forEach(function (k) {
+          var i = k.indexOf('|'), office = k.slice(0, i), account = k.slice(i + 1), e = edits[k];
+          var a = num(e.approp), s = num(e.allot);
+          if (isNaN(a) || isNaN(s)) { bad = bad || (account + ', office ' + office); return; }
+          if (a === null && s === null) return;
+          entries.push({ office: office, account: account, approp: a, allot: s });
+        });
+        if (bad) { $('#perr').innerHTML = msg('err', 'One of the amounts is not valid (' + bad + '). Type numbers only, for example 125000.50.'); return; }
+        api('/api/pgso', { method: 'PUT', json: { asOf: $('#pgdate').value, entries: entries } })
+          .then(function (r) { toast(r.unchanged ? 'No changes to save.' : 'PGSO balances saved.'); viewPgso(); })
+          .catch(function (er) { $('#perr').innerHTML = msg('err', errText(er)); });
+      };
+      drawRows(); dateNote();
+    }).catch(function (e) { if (e.message !== 'signed-out') $('#pg').innerHTML = msg('err', errText(e)); });
+  }
+
   // ---------- admin: voided funds
   function viewVoids() {
     shell('voids', '<h1 class="page-title">Voided funds</h1><p class="page-lead">When a fund source is voided, it is voided in every office. Its balances leave the available fund and are shown in red as a deduction, with the office and the reason you state here. You can void several fund sources at once.</p><div id="vd"><p class="muted">Loading</p></div>');
@@ -451,12 +559,13 @@
     if (!me) return showLogin();
     var name = ((location.hash || '#/dashboard').replace(/^#\/?/, '').split('?')[0].split('/')[0]) || 'dashboard';
     if (me.mustChange) return viewPassword(true);
-    var adminOnly = { data: 1, sources: 1, voids: 1, users: 1 };
+    var adminOnly = { data: 1, sources: 1, pgso: 1, voids: 1, users: 1 };
     if (adminOnly[name] && me.role !== 'admin') { location.hash = '#/dashboard'; return; }
     window.scrollTo(0, 0);
     if (name === 'history') return viewHistory();
     if (name === 'data') return viewData();
     if (name === 'sources') return viewSources();
+    if (name === 'pgso') return viewPgso();
     if (name === 'voids') return viewVoids();
     if (name === 'users') return viewUsers();
     if (name === 'password') return viewPassword(false);

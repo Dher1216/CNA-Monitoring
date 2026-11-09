@@ -78,7 +78,7 @@ function modelFor(revision) {
 // What a new version keeps from the current one (everything except what the change itself alters).
 function carry(cur) {
   const up = loadUpload(cur.uploadId);
-  return { uploadId: cur.uploadId, params: cur.params, voids: cur.voids || [], fundSources: selectionOf(cur, up) };
+  return { uploadId: cur.uploadId, params: cur.params, voids: cur.voids || [], fundSources: selectionOf(cur, up), pgso: cur.pgso || null };
 }
 const nameList = (list, max = 5) => list.slice(0, max).join('; ') + (list.length > max ? ` and ${list.length - max} more` : '');
 // Every account line in the uploaded report, one entry per account, summed over the offices.
@@ -185,7 +185,7 @@ app.get('/api/report.xlsx', auth.requireAuth, wrap(async (req, res) => {
   res.end();
 }));
 
-const ACTION_LABEL = { upload: 'E-budget upload', params: 'Figures changed', 'void-add': 'Fund source voided', 'void-remove': 'Void removed', restore: 'Version restored', sources: 'Fund sources changed' };
+const ACTION_LABEL = { upload: 'E-budget upload', params: 'Figures changed', 'void-add': 'Fund source voided', 'void-remove': 'Void removed', restore: 'Version restored', sources: 'Fund sources changed', pgso: 'PGSO balances updated' };
 app.get('/api/revisions', auth.requireAuth, wrap(async (req, res) => {
   const s = store.state.load();
   const cur = store.state.current(s);
@@ -227,7 +227,7 @@ app.post('/api/upload', auth.requireAdmin, wrap(async (req, res) => {
   };
   store.uploads.save(uploadId, upload);
   uploadCache.set(uploadId, upload);
-  const rev = await addRevision({ action: 'upload', uploadId, params, voids: prev ? prev.voids : [], fundSources: parsed.fundSources, note: filename }, req.user);
+  const rev = await addRevision({ action: 'upload', uploadId, params, voids: prev ? prev.voids : [], fundSources: parsed.fundSources, pgso: prev ? prev.pgso || null : null, note: filename }, req.user);
   const model = modelFor(rev);
   res.json({
     ok: true, revisionId: rev.id,
@@ -319,6 +319,70 @@ app.put('/api/fund-sources', auth.requireAdmin, wrap(async (req, res) => {
   res.json({ ok: true, revisionId: rev.id, added: added.length, removed: removed.length, selected: next.length });
 }));
 
+// ---------- admin: PGSO balances
+// The budget office report is the actual balance. Where PGSO still holds transactions that have not been transferred
+// to the budget office, the administrator enters the balance PGSO holds for a fund source in an office. The reports then
+// show the budget office balance, the PGSO balance and the difference side by side.
+app.get('/api/pgso', auth.requireAdmin, wrap(async (req, res) => {
+  const cur = store.state.current();
+  if (!cur) return res.json({ empty: true });
+  const up = loadUpload(cur.uploadId);
+  const selSet = new Set(selectionOf(cur, up).map(norm));
+  const voidSet = new Set((cur.voids || []).map((v) => norm(v.account)));
+  const known = reportAccounts(up);
+  const accounts = [...known.entries()].filter(([k]) => selSet.has(k))
+    .sort((a, b) => String(a[1].code).localeCompare(String(b[1].code)) || a[1].account.localeCompare(b[1].account))
+    .map(([k, e]) => ({ code: e.code, account: e.account, voided: voidSet.has(k) }));
+  const lines = [];
+  for (const o of up.offices) for (const r of o.rows) if (selSet.has(norm(r.account))) lines.push({ office: o.code, officeName: o.name, account: r.account, approp: r.approp, allot: r.allot });
+  res.json({
+    reportAsOf: up.reportAsOf, filename: up.filename,
+    accounts, lines, pgso: cur.pgso || { asOf: '', entries: [] },
+  });
+}));
+
+app.put('/api/pgso', auth.requireAdmin, wrap(async (req, res) => {
+  const cur = store.state.current();
+  if (!cur) return bad(res, 'Upload the e-budget report first.');
+  const up = loadUpload(cur.uploadId);
+  const list = req.body && req.body.entries;
+  if (!Array.isArray(list) || list.length > 20000) return bad(res, 'Nothing to save.');
+  const asOf = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.asOf || '')) ? req.body.asOf : todayManila();
+  const selected = new Set(selectionOf(cur, up).map(norm));
+  const known = reportAccounts(up);
+  const officeName = new Map(up.offices.map((o) => [o.code, o.name]));
+  const amountOf = (v, label) => {
+    if (v === null || v === undefined || v === '') return null;
+    const n = Number(v);
+    if (!Number.isFinite(n) || Math.abs(n) > 1e11) throw new Error(`${label} is not a valid amount.`);
+    return Math.round(n * 100) / 100;
+  };
+  const entries = [], seen = new Set();
+  try {
+    for (const e of list) {
+      const office = clean(e && e.office, 60), k = norm(clean(e && e.account, 200));
+      if (!officeName.has(office)) return bad(res, `"${office}" is not an office in the uploaded report.`);
+      if (!known.has(k) || !selected.has(k)) return bad(res, 'PGSO balances can only be entered for selected fund sources in the report.');
+      const approp = amountOf(e.approp, `The appropriation balance for ${officeName.get(office)}`);
+      const allot = amountOf(e.allot, `The allotment balance for ${officeName.get(office)}`);
+      if (approp === null && allot === null) continue;
+      const id = office + '|' + k;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      entries.push({ office, account: known.get(k).account, approp, allot });
+    }
+  } catch (err) { return bad(res, err.message); }
+  const before = cur.pgso && Array.isArray(cur.pgso.entries) ? cur.pgso : { asOf: '', entries: [] };
+  const same = before.asOf === asOf && JSON.stringify(before.entries) === JSON.stringify(entries);
+  if (same) return res.json({ ok: true, unchanged: true });
+  const accts = [...new Set(entries.map((x) => x.account))];
+  const note = entries.length
+    ? `${entries.length} PGSO balance${entries.length === 1 ? '' : 's'} saved for ${nameList(accts, 3)}, as of ${asOf}`
+    : 'All PGSO balances cleared';
+  const rev = await addRevision({ ...carry(cur), action: 'pgso', pgso: entries.length ? { asOf, entries } : null, note }, req.user);
+  res.json({ ok: true, revisionId: rev.id, count: entries.length });
+}));
+
 // ---------- admin: voided fund sources
 // A void applies to the fund source in every office. The office named is a remark only.
 app.post('/api/voids', auth.requireAdmin, wrap(async (req, res) => {
@@ -389,7 +453,7 @@ app.post('/api/revisions/:id/restore', auth.requireAdmin, wrap(async (req, res) 
   const cur = store.state.current(s);
   if (r.id === cur.id) return bad(res, 'That version is already the current one.');
   const up = loadUpload(r.uploadId);
-  await addRevision({ action: 'restore', uploadId: r.uploadId, params: r.params, voids: r.voids, fundSources: selectionOf(r, up), note: `Restored the version of ${new Date(r.at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })} (report as of ${up ? up.reportAsOf : ''})` }, req.user);
+  await addRevision({ action: 'restore', uploadId: r.uploadId, params: r.params, voids: r.voids, fundSources: selectionOf(r, up), pgso: r.pgso || null, note: `Restored the version of ${new Date(r.at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })} (report as of ${up ? up.reportAsOf : ''})` }, req.user);
   res.json({ ok: true });
 }));
 

@@ -389,3 +389,20 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tbl-excess td, .tbl-excess thead th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .tbl-excess td:last-child { text-align: left; }
 .tbl-excess td.good strong { color: var(--green); }
+
+/* PGSO balances shown beside the budget office balances */
+.block-pgso .tbl th small { display: block; font-weight: 400; font-size: .78rem; color: var(--muted); }
+.tbl-pgso td { text-align: right; font-variant-numeric: tabular-nums; }
+.tbl-pgso td.lft { text-align: left; }
+.tbl-pgso td .good { color: var(--green); }
+.pgso-sub { margin: 16px 0 6px; font-size: 1rem; color: var(--v800); }
+.pgso-box { margin-top: 10px; }
+.block-pgso .muted strong { color: var(--red); }
+
+/* admin page: PGSO balances */
+.tbl-pgso-edit td { text-align: right; font-variant-numeric: tabular-nums; }
+.tbl-pgso-edit th small { display: block; font-weight: 400; font-size: .78rem; }
+.tbl-pgso-edit tr[hidden] { display: none; }
+.amt-in { width: 100%; min-width: 130px; padding: 7px 8px; border: 1px solid var(--v300); border-radius: 3px; background: #fff; font: inherit; text-align: right; }
+.amt-in:focus { outline: 3px solid var(--v300); border-color: var(--v600); }
+.tbl-pgso-edit .good { color: var(--green); }

@@ -137,6 +137,84 @@
       '<div class="net"><dt>Net available fund for CNA</dt><dd>' + peso(n) + '</dd></div>' + extra + '</dl></div></section>';
   }
 
+  // ---------- PGSO balances (fuel and oil and other accounts the administrator adjusted)
+  // The budget office figures are the actual e-budget balances; the PGSO balance is shown beside them.
+  function signed(n) {
+    n = Number(n) || 0;
+    if (!n) return '<span class="nil">–</span>';
+    return n < 0 ? '<span class="void">(' + fmt(Math.abs(n)) + ')</span>' : '<span class="good">' + fmt(n) + '</span>';
+  }
+  function signedPeso(n) {
+    n = Number(n) || 0;
+    return n < 0 ? '<span class="void">(' + peso(Math.abs(n)) + ')</span>' : '<span class="' + (n ? 'good' : '') + '">' + peso(n) + '</span>';
+  }
+  function pgsoNote(m) {
+    var pg = m.pgso, old = pg.asOf && m.meta.asOf && String(pg.asOf) < String(m.meta.asOf);
+    return 'The budget office balances are the actual balances in the e-budget report. PGSO still has transactions that have not been transferred to the budget office, so the balances PGSO holds' +
+      (pg.asOf ? ' as of ' + esc(longDate(pg.asOf)) : '') + ' are shown beside them. The difference is PGSO less the budget office.' +
+      (old ? ' <strong>The PGSO figures are older than the e-budget report, so they may need to be updated.</strong>' : '');
+  }
+  function sumRows(rows) {
+    var t = { bo: { approp: 0, allot: 0 }, pgso: { approp: 0, allot: 0 }, diff: { approp: 0, allot: 0 } };
+    rows.forEach(function (r) {
+      ['bo', 'pgso', 'diff'].forEach(function (k) { t[k].approp += Math.round(r[k].approp * 100); t[k].allot += Math.round(r[k].allot * 100); });
+    });
+    ['bo', 'pgso', 'diff'].forEach(function (k) { t[k] = { approp: t[k].approp / 100, allot: t[k].allot / 100, overall: (t[k].approp + t[k].allot) / 100 }; });
+    return t;
+  }
+  function pgsoTable(rows, key, total, showOffice) {
+    var lbl = key === 'approp' ? 'Appropriation balance' : 'Overall available balance';
+    var h = '<thead><tr>' + (showOffice ? '<th scope="col">Office</th>' : '') + '<th scope="col">Fund source</th>' +
+      '<th scope="col" class="num">Budget office<small>' + lbl + '</small></th><th scope="col" class="num">PGSO<small>' + lbl + '</small></th>' +
+      '<th scope="col" class="num">Difference<small>PGSO less budget office</small></th></tr></thead>';
+    var b = '';
+    rows.forEach(function (r) {
+      b += '<tr>' + (showOffice ? '<th scope="row"><span class="oname">' + esc(r.officeName) + '</span><span class="acode">' + esc(r.officeCode) + '</span></th><td class="lft">' + esc(r.account) + '</td>'
+        : '<th scope="row"><span class="acode">' + esc(r.code) + '</span>' + esc(r.account) + '</th>') +
+        '<td>' + cell(r.bo[key]) + '</td><td>' + cell(r.pgso[key]) + '</td><td>' + signed(r.diff[key]) + '</td></tr>';
+    });
+    var f = '<tfoot><tr class="foot-net"><th scope="row"' + (showOffice ? ' colspan="2"' : '') + '>Total</th><td>' + peso(total.bo[key]) + '</td><td>' + peso(total.pgso[key]) + '</td><td>' + signedPeso(total.diff[key]) + '</td></tr></tfoot>';
+    return '<div class="tbl-scroll"><table class="tbl tbl-pgso">' + h + '<tbody>' + b + '</tbody>' + f + '</table></div>';
+  }
+  // Net available fund per the budget office, the PGSO difference, and the net available fund adjusted for PGSO.
+  function adjustedBox(m, basis, officeCode) {
+    var pg = m.pgso, key = basis === 'approp' ? 'approp' : 'overall', base, diff, adj, cover = null;
+    if (officeCode) {
+      var o = null; m.offices.forEach(function (x) { if (x.code === officeCode) o = x; });
+      base = o ? o.net[key] : 0;
+      diff = pg.byOffice[officeCode] ? pg.byOffice[officeCode][key] : 0;
+      adj = Math.round((base + diff) * 100) / 100;
+    } else {
+      base = m.totals.net[key]; diff = pg.totals.diff[key]; adj = pg.adjusted.net[key];
+      cover = key === 'approp' ? pg.adjusted.requirement.optionA : pg.adjusted.requirement.optionB;
+    }
+    var h = '<div class="netbox pgso-box"><dl>' +
+      '<div><dt>Net available fund per budget office</dt><dd>' + peso(base) + '</dd></div>' +
+      '<div><dt>Add / (less): difference per PGSO</dt><dd>' + signedPeso(diff) + '</dd></div>' +
+      '<div class="net"><dt>Net available fund adjusted for PGSO</dt><dd>' + peso(adj) + '</dd></div>';
+    if (cover) {
+      var short = !cover.ok;
+      h += '<div class="fund-need"><dt>Less: amount to be funded</dt><dd>(' + peso(m.requirement.required) + ')</dd></div>' +
+        '<div class="excess ' + (short ? 'is-short' : 'is-ok') + '"><dt>' + (short ? 'Deficit' : 'Excess') + ' after the PGSO adjustment</dt><dd>' + (short ? '(' + peso(Math.abs(cover.difference)) + ')' : peso(cover.difference)) + '</dd></div>';
+    }
+    return h + '</dl></div>';
+  }
+  // basis: 'approp' | 'overall' | 'both' (the dashboard and the per fund source report). officeCode limits it to one office.
+  function pgsoBlock(m, basis, officeCode) {
+    var pg = m.pgso;
+    if (!pg) return '';
+    var rows = officeCode ? pg.rows.filter(function (r) { return r.officeCode === officeCode; }) : pg.rows;
+    if (!rows.length) return '';
+    var key = basis === 'approp' ? 'approp' : 'overall';
+    var html = '<section class="block block-pgso" id="pgso"><h2>' + (officeCode ? 'PGSO balance' : 'Adjusted for PGSO balances') + '</h2><p class="muted">' + pgsoNote(m) + '</p>' +
+      pgsoTable(rows, key, officeCode ? sumRows(rows) : pg.totals, !officeCode);
+    if (basis === 'both') {
+      html += '<h3 class="pgso-sub">' + esc(label(BASES, 'approp')) + '</h3>' + adjustedBox(m, 'approp') +
+        '<h3 class="pgso-sub">Overall available balance</h3>' + adjustedBox(m, 'overall');
+    } else html += adjustedBox(m, basis, officeCode);
+    return html + '</section>';
+  }
+
   // ---------- voided tables
   function voidedFundTable(basis, rows, total, withRemarks) {
     var h = '<th scope="col">Voided fund source</th><th scope="col" class="num">Appropriation balance</th>' + (basis === 'overall' ? '<th scope="col" class="num">Allotment balance</th><th scope="col" class="num">Total voided</th>' : '') +
@@ -168,6 +246,7 @@
       '<p class="grand-label">Overall available balance</p><p class="grand">' + peso(t.net.overall) + '</p>' +
       ledger(t.gross.overall, t.voided.overall) + verdict(rq.optionB, rq.required) + '</div></section>';
     html += requirementBlock(m, '');
+    html += pgsoBlock(m, 'both');
     html += voidedBlock(m);
     return html + footer(m) + '</article>';
   }
@@ -196,6 +275,7 @@
       : '<p class="muted">No fund sources have been voided.</p>') + '</section>';
     // 3. Net available
     html += netBox('Net available fund for CNA', t.gross, t.voided, t.net, basis, basis === 'approp' ? m.requirement.optionA : m.requirement.optionB, m.requirement.required);
+    html += pgsoBlock(m, basis);
     // 4. Funding requirement
     html += requirementBlock(m, basis);
     return html + footer(m) + '</article>';
@@ -227,13 +307,14 @@
     var html = '<article class="sheet" id="report">' + header(m, opts, 'Per office report: ' + (all ? 'All offices' : one.name) + ', ' + label(BASES, basis));
     if (!all) {
       html += '<section class="block" id="gross"><h2>Fund sources of ' + esc(one.name) + '</h2><p class="muted">Voided fund sources are shown at the right and are not counted in the net available fund. Fund sources with no balance in this office are not listed.</p>' +
-        officeTable(one, basis) + '</section>';
+        officeTable(one, basis) + '</section>' + pgsoBlock(m, basis, one.code);
       return html + footer(m) + '</article>';
     }
     html += '<p class="muted">Voided fund sources are shown at the right of each table and are not counted in the net available fund. Fund sources with no balance in an office are not listed under that office.</p>';
     m.offices.forEach(function (o) { html += officeBlock(m, o, basis); });
     var t = m.totals;
     html += netBox('All offices: net available fund for CNA', t.gross, t.voided, t.net, basis, basis === 'approp' ? m.requirement.optionA : m.requirement.optionB, m.requirement.required);
+    html += pgsoBlock(m, basis);
     html += '<section class="block block-void" id="voided"><h2>Voided fund sources</h2>' + (m.voids.length
       ? '<p class="muted">Each voided fund source is excluded in every office.</p>' + voidedFundTable(basis, m.voids, m.voidTotals, true)
       : '<p class="muted">No fund sources have been voided.</p>') + '</section>';
@@ -257,7 +338,7 @@
     var h = '<thead><tr><th scope="col">Fund source</th><th scope="col" class="num">Appropriation balance<small>20% retention</small></th><th scope="col" class="num emph-head">Allotment balance</th><th scope="col" class="num">Overall available<small>appropriation + allotment</small></th><th scope="col" class="num void-head">Voided<small>deducted</small></th></tr></thead>';
     return '<article class="sheet" id="report">' + header(m, opts, 'Per fund source report') +
       '<section class="block" id="sources"><h2>Available fund per fund source</h2><p class="muted">Whole province, net of voided fund sources.</p>' +
-      '<div class="tbl-scroll"><table class="tbl tbl-accounts">' + h + body + foot + '</table></div></section>' + excessTable(m) + footer(m) + '</article>';
+      '<div class="tbl-scroll"><table class="tbl tbl-accounts">' + h + body + foot + '</table></div></section>' + excessTable(m) + pgsoBlock(m, 'both') + footer(m) + '</article>';
   }
   // Excess or deficit, worked out for both bases: the 20% appropriation balance and the overall available balance.
   function excessTable(m) {
