@@ -164,7 +164,7 @@ app.get('/api/report.xlsx', auth.requireAuth, wrap(async (req, res) => {
   const rev = req.query.rev ? s.revisions.find((r) => r.id === String(req.query.rev)) : cur;
   if (!rev) return bad(res, 'That report version was not found.', 404);
   const model = modelFor(rev);
-  const FILES = { dashboard: 'available-fund', summary: 'summary', offices: 'per-office', sources: 'per-fund-source', voided: 'voided-funds' };
+  const FILES = { dashboard: 'available-fund', summary: 'summary', offices: 'per-office', sources: 'per-fund-source', voided: 'voided-funds', fuel: 'pgso-adjusted-fuel-and-oil' };
   const kind = FILES[req.query.report] ? String(req.query.report) : null;
   const basis = req.query.basis === 'overall' ? 'overall' : req.query.basis === 'approp' ? 'approp' : '';
   let office = String(req.query.office || '');

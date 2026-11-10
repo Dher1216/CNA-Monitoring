@@ -136,6 +136,8 @@ The reports then show the adjusted amount as a **line item right after the net a
 - **Per office report** (one office or all offices): under each office's "Net available fund of ..." line, a line "Net available fund of ..., adjusted for PGSO" with the amounts, and the difference per PGSO in small print.
 - **Per fund source report**: under "Net available fund", a line "Net available fund, adjusted for PGSO", then the excess or deficit per the budget office and the excess or deficit adjusted for PGSO, for both the 20% appropriation balance and the overall available balance.
 - **Summary report**: in the net available fund box, the difference per PGSO, the net available fund adjusted for PGSO, and the excess or deficit both ways.
+- Under the adjusted line, each office's table also shows the **PGSO adjusted balance of each fund source PGSO holds there** (for example fuel and oil), with the budget office balance and the difference in small print.
+- **PGSO adjusted Fuel and Oil report** (pick it in the Reports tab, print it or download it as Excel): one table per fund source with PGSO balances, listing every office with its budget office balance, its PGSO adjusted balance and the difference, then the total and the effect on the net available fund and on the excess or deficit. An office with no PGSO balance entered shows the budget office figure unchanged and is marked as such.
 - The dashboard shows a short summary of the same, and the Excel downloads and the offline copy match the reports.
 
 - The budget office figures and the original excess or deficit stay exactly as they were.

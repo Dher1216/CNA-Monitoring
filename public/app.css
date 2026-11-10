@@ -413,3 +413,19 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .netbox dl > div.net-adj { border-top: 1px dashed var(--v300); }
 .netbox dl > div dt small { display: block; font-weight: 400; font-size: .78rem; color: #6b6480; }
 .netbox dl > div.excess-adj { border-top: 1px dashed var(--v300); margin-top: 0; }
+
+/* per office: PGSO adjusted balance of a fund source (fuel and oil) */
+.tbl .foot-pgso th, .tbl .foot-pgso td { background: #f3fbf6; color: #1e5a33; font-weight: 600; }
+
+/* PGSO adjusted Fuel and Oil report */
+.tbl-fuel { font-size: .86rem; }
+.tbl-fuel td { text-align: right; font-variant-numeric: tabular-nums; }
+.tbl-fuel thead th { text-align: right; vertical-align: bottom; }
+.tbl-fuel thead th:first-child { text-align: left; }
+.tbl-fuel thead th.grp { text-align: center; border-bottom: 1px solid #fff; }
+.tbl-fuel thead th.grp-pgso { background: #1e6b3f; }
+.tbl-fuel th small { display: block; font-weight: 400; font-size: .74rem; color: var(--muted); }
+.tbl-fuel thead th small { color: inherit; opacity: .85; }
+.tbl-fuel tr.no-pgso th small { color: #8a6d00; }
+.tbl-fuel td .good { color: var(--green); }
+.tbl-fuel td.grand-cell { background: #f3fbf6; font-weight: 600; }
